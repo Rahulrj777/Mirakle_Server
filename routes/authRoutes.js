@@ -9,6 +9,15 @@ dotenv.config();
 
 const router = express.Router();
 
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.MAIL_USER,
+    pass: process.env.MAIL_PASS,
+  },
+});
+
+
 // POST /api/signup
 router.post("/signup", async (req, res) => {
   try {
