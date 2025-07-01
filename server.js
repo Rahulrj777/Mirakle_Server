@@ -17,6 +17,10 @@ app.use('/api/products', productRoutes);
 app.use('/api/banners', bannerRoutes);
 app.use("/api", authRoutes);                      
 
+app.get("/", (req, res) => {
+  res.send("Mirakle Server is Running");
+});
+
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch(err => console.error("MongoDB connection error:", err));
