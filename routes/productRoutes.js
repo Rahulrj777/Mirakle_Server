@@ -64,26 +64,30 @@ router.post('/upload-product', upload.array('images', 10), async (req, res) => {
 // PUT /api/products/:id
 router.put('/:id', upload.array('images', 10), async (req, res) => {
   try {
-    const { name, currentPrice, oldPrice, weightValue, weightUnit, discountPercent } = req.body;
+    const { name, variants, description, details, removedImages } = req.body;
 
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    // Update basic fields
     product.title = name || product.title;
-    product.currentPrice = parseFloat(currentPrice) || product.currentPrice;
-    product.oldPrice = oldPrice ? parseFloat(oldPrice) : undefined;
-    product.discountPercent = discountPercent ? parseFloat(discountPercent) : undefined;
-    product.weight = {
-      value: parseFloat(weightValue) || product.weight.value,
-      unit: weightUnit || product.weight.unit,
-    };
+    product.description = description || '';
+    product.details = details ? JSON.parse(details) : {};
 
-    // If new images are uploaded, replace the old ones
-    if (req.files && req.files.length > 0) {
-      const images = req.files.map((file) => `/${uploadDir}/${file.filename}`);
-      product.images.others = images;
+    if (variants) {
+      const parsedVariants = JSON.parse(variants);
+      product.variants = parsedVariants;
     }
+
+    // Append new images
+    const newImages = req.files.map((file) => `/${uploadDir}/${file.filename}`);
+
+    // Remove images listed in removedImages
+    if (removedImages) {
+      const removed = JSON.parse(removedImages);
+      product.images.others = product.images.others.filter(img => !removed.includes(img));
+    }
+
+    product.images.others = [...product.images.others, ...newImages];
 
     await product.save();
     res.json({ message: 'Product updated successfully', product });
@@ -92,6 +96,7 @@ router.put('/:id', upload.array('images', 10), async (req, res) => {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
+
 
 // PUT /api/products/:id/toggle-stock
 router.put('/:id/toggle-stock', async (req, res) => {
