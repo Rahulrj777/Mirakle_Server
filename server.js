@@ -10,24 +10,27 @@ dotenv.config();
 
 const app = express();
 
-// ✅ Fix CORS by specifying allowed origins
 const allowedOrigins = [
+  "https://mirakle-client.vercel.app",
   "https://mirakle-admin.vercel.app",
-  "https://mirakle-client.vercel.app"
 ];
 
 app.use(cors({
-  origin: function (origin, callback) {
+  origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.log("❌ Blocked by CORS:", origin); // for debugging
       callback(new Error("Not allowed by CORS"));
     }
   },
-  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
 
-app.options('*', cors()); // ✅ Add this line
+// 👇 This must come BEFORE any routes
+app.options('*', cors());
 
 
 app.use(express.json());
