@@ -73,7 +73,7 @@ router.post("/forgot-password", async (req, res) => {
       },
     });
 
-    const resetLink = `http://localhost:5173/reset-password/${token}`;
+    const resetLink = `https://mirakle-client.vercel.app/reset-password/${token}`;
 
     await transporter.sendMail({
       from: process.env.MAIL_USER,
