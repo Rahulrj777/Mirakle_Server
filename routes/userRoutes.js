@@ -74,6 +74,10 @@ router.post("/forgot-password", async (req, res) => {
     });
 
     const resetLink = `${process.env.CLIENT_URL}/reset-password/${token}`;
+    console.log("CLIENT_URL is:", process.env.CLIENT_URL);
+    if (!resetLink) {
+      return res.status(500).json({ message: "Reset link generation failed" });
+    }
 
     await transporter.sendMail({
       from: process.env.MAIL_USER,
