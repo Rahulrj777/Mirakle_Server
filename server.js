@@ -12,7 +12,7 @@ const app = express();
 
 // ✅ Fix CORS by specifying allowed origins
 const allowedOrigins = [
-  "http://localhost:3000",
+  "https://mirakle-admin.vercel.app",
   "https://mirakle-client.vercel.app"
 ];
 
