@@ -51,5 +51,21 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch(err => console.error("MongoDB connection error:", err));
 
+  // Debug: Print all registered route paths
+app._router.stack.forEach((middleware) => {
+  if (middleware.route) {
+    console.log("📦 Route:", middleware.route.path);
+  } else if (middleware.name === 'router') {
+    middleware.handle.stack.forEach((handler) => {
+      const routePath = handler.route?.path;
+      const method = Object.keys(handler.route?.methods || {})[0];
+      if (routePath) {
+        console.log(`🔹 ${method.toUpperCase()} ${routePath}`);
+      }
+    });
+  }
+});
+
+
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
