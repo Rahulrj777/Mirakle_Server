@@ -35,13 +35,9 @@ app.options('*', cors());
 
 app.use(express.json());
 app.use('/uploads', express.static('uploads')); 
-console.log("Static uploads directory mounted at /uploads");
 app.use('/api/products', productRoutes);
-console.log("Mounted route: /api/products")
 app.use('/api/banners', bannerRoutes);
-console.log("Mounted route: /api/banners")
 app.use("/api", userRoutes);       
-console.log("Mounted route: /api")               
 
 app.get("/", (req, res) => {
   res.send("Mirakle Server is Running");
