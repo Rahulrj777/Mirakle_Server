@@ -35,8 +35,8 @@ app.options('*', cors());
 
 app.use(express.json());
 app.use('/uploads', express.static('uploads')); 
-app.use('/api/products', productRoutes);
-app.use('/api/banners', bannerRoutes);
+// app.use('/api/products', productRoutes);
+// app.use('/api/banners', bannerRoutes);
 app.use("/api", userRoutes);       
 
 app.get("/", (req, res) => {
