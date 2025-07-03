@@ -39,65 +39,53 @@ const handleImageUpload = (req, res, next) => {
 };
 
 // POST /upload
-router.post('/upload', handleImageUpload, async (req, res) => {
+// routes/bannerRoutes.js
+
+router.post('/upload', uploadMiddleware, async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+    const { type, hash, title, price, oldPrice, discountPercent, weightValue, weightUnit, productIds } = req.body;
 
-    const {
-      type,
-      hash,
-      title,
-      price,
-      oldPrice,
-      discountPercent,
-      weightValue,
-      weightUnit,
-    } = req.body;
-
-    if (!type || !hash) {
-      fs.unlinkSync(req.file.path);
-      return res.status(400).json({ message: 'Missing type or hash' });
+    const bannerData = { type };
+    if (type === 'most-selling' || type === 'product-type') {
+      bannerData.products = JSON.parse(productIds || '[]');
+    } else {
+      if (!req.file || !hash) throw new Error('Missing image or hash');
+      bannerData.hash = hash;
+      bannerData.imageUrl = `/${uploadDir}/${req.file.filename}`;
+      bannerData.title = title || '';
+      if (type === 'product-type') {
+        bannerData.price = parseFloat(price) || 0;
+        bannerData.oldPrice = parseFloat(oldPrice) || 0;
+        bannerData.discountPercent = parseFloat(discountPercent) || 0;
+        bannerData.weight = weightValue && weightUnit ? { value: parseFloat(weightValue), unit: weightUnit } : undefined;
+      }
     }
 
-    const typeLimits = {
-      slider: 5,
-      side: 3,
-      offer: 1,
-      'product-type': 10,
-    };
-
-    const maxLimit = typeLimits[type] || 10;
-
-    const existing = await Banner.findOne({ type, hash });
-    if (existing) {
-      fs.unlinkSync(req.file.path);
-      return res.status(409).json({ message: 'Duplicate image in this banner type' });
-    }
-
-    const count = await Banner.countDocuments({ type });
-    if (count >= maxLimit) {
-      fs.unlinkSync(req.file.path);
-      return res.status(400).json({ message: `Only ${maxLimit} banners allowed for ${type}` });
-    }
-
-    const newBanner = new Banner({
-      imageUrl: `/${uploadDir}/${req.file.filename}`,
-      type,
-      hash,
-      title: title || '',
-      ...(type === 'product-type' && price && { price: parseFloat(price) }),
-      ...(type === 'product-type' && oldPrice && { oldPrice: parseFloat(oldPrice) }),
-      ...(type === 'product-type' && discountPercent && { discountPercent: parseFloat(discountPercent) }),
-      ...(type === 'product-type' && weightValue && weightUnit && {
-        weight: { value: parseFloat(weightValue), unit: weightUnit },
-      }),
-    });
-
-    await newBanner.save();
-    res.status(201).json(newBanner);
+    const banner = new Banner(bannerData);
+    await banner.save();
+    return res.status(201).json(banner);
   } catch (err) {
-    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-    res.status(500).json({ message: 'Server error', error: err.message });
+    console.error(err);
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.put('/:id', upload.single('image'), async (req, res) => {
+  try {
+    const { type, title, price, oldPrice, discountPercent, weightValue, weightUnit, productIds } = req.body;
+    const updates = {};
+    if (type === 'most-selling' || type === 'product-type') {
+      updates.products = JSON.parse(productIds || '[]');
+    }
+    if (req.file) updates.imageUrl = `/${uploadDir}/${req.file.filename}`;
+    // other updates...
+    
+    const updated = await Banner.findByIdAndUpdate(req.params.id, updates, { new: true });
+    if (!updated) return res.status(404).json({ message: 'Not found' });
+    return res.json(updated);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: err.message });
   }
 });
 
