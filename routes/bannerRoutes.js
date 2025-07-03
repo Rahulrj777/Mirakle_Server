@@ -166,11 +166,13 @@ router.post("/upload", (req, res) => {
           discountPercent: Number.parseFloat(discountPercent) || 0,
         }
 
-        if (weightValue && weightUnit) {
+        if (weightValue && weightUnit && !isNaN(weightValue)) {
           bannerData.weight = {
             value: Number.parseFloat(weightValue),
             unit: weightUnit,
           }
+        } else {
+          bannerData.weight = undefined // or delete it
         }
       } else {
         // Handle regular banners (require image file)
