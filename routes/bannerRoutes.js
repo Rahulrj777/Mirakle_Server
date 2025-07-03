@@ -1,3 +1,4 @@
+// RENAME this file from bannerRoutes-final.js to bannerRoutes.js
 import express from "express"
 import multer from "multer"
 import fs from "fs"
@@ -24,7 +25,6 @@ const upload = multer({
 // Debug middleware
 router.use((req, res, next) => {
   console.log(`🔥 BANNER: ${req.method} ${req.originalUrl}`)
-  console.log("🔥 Content-Type:", req.headers["content-type"])
   next()
 })
 
@@ -54,19 +54,10 @@ router.get("/", async (req, res) => {
   }
 })
 
-// POST upload - FIXED LOGIC
+// POST upload - FIXED
 router.post("/upload", (req, res) => {
   console.log("🔥 UPLOAD START")
-  console.log("📝 Headers:", req.headers)
 
-  // Check if this is a product-based banner first
-  const isMultipart = req.headers["content-type"]?.includes("multipart/form-data")
-
-  if (!isMultipart) {
-    return res.status(400).json({ message: "Invalid content type" })
-  }
-
-  // Use multer to parse the form data
   upload.single("image")(req, res, async (err) => {
     if (err) {
       console.log("❌ Multer error:", err)
@@ -121,7 +112,7 @@ router.post("/upload", (req, res) => {
         title: title || "",
       }
 
-      // Handle product-based banners (NO IMAGE FILE REQUIRED)
+      // Handle product-based banners (NO HASH NEEDED)
       if (type === "product-type" || type === "side") {
         console.log("🛍️ Processing product-based banner")
 
@@ -144,6 +135,7 @@ router.post("/upload", (req, res) => {
           price: Number.parseFloat(price) || 0,
           oldPrice: Number.parseFloat(oldPrice) || 0,
           discountPercent: Number.parseFloat(discountPercent) || 0,
+          // NO HASH for product banners
         }
 
         if (weightValue && weightUnit) {
@@ -155,7 +147,7 @@ router.post("/upload", (req, res) => {
 
         console.log("💾 Product banner data:", bannerData)
       } else {
-        // Handle regular banners (IMAGE FILE REQUIRED)
+        // Handle regular banners (HASH REQUIRED)
         console.log("🖼️ Processing regular banner")
 
         if (!req.file) {
@@ -167,7 +159,7 @@ router.post("/upload", (req, res) => {
           return res.status(400).json({ message: "File hash is required" })
         }
 
-        // Check for duplicates
+        // Check for duplicates (only for regular banners with hash)
         const existing = await Banner.findOne({ type, hash })
         if (existing) {
           fs.unlinkSync(req.file.path)
@@ -177,7 +169,7 @@ router.post("/upload", (req, res) => {
         bannerData = {
           ...bannerData,
           imageUrl: `/${uploadDir}/${req.file.filename}`,
-          hash,
+          hash, // Hash only for regular banners
         }
 
         console.log("💾 Regular banner data:", bannerData)
@@ -207,11 +199,9 @@ router.post("/upload", (req, res) => {
 // PUT update banner
 router.put("/:id", (req, res) => {
   console.log("🔥 UPDATE START")
-  console.log("📝 Banner ID:", req.params.id)
 
   upload.single("image")(req, res, async (err) => {
     if (err) {
-      console.log("❌ Update multer error:", err)
       return res.status(400).json({ message: `Update error: ${err.message}` })
     }
 
@@ -257,7 +247,6 @@ router.put("/:id", (req, res) => {
         // Clean up any uploaded file since we don't need it for product banners
         if (req.file) {
           fs.unlinkSync(req.file.path)
-          console.log("🗑️ Cleaned up unnecessary file for product banner update")
         }
       } else {
         // Handle regular banner updates with potential new image
@@ -280,8 +269,6 @@ router.put("/:id", (req, res) => {
         error: error.message,
       })
     }
-
-    console.log("🔥 UPDATE END")
   })
 })
 
