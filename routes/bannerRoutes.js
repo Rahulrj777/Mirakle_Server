@@ -17,10 +17,10 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// POST /upload
-router.post('/upload', async (req, res) => {
+// TOP-LEVEL upload handler, so multer gets triggered BEFORE accessing req.body
+router.post('/upload', upload.single('image'), async (req, res) => {
   try {
-    const { type, productId, selectedVariantIndex, title, price, weightValue, weightUnit, oldPrice, discountPercent, productImageUrl } = req.body;
+    const { type, hash, title, price, weightValue, weightUnit, oldPrice, discountPercent, productImageUrl, productId, selectedVariantIndex } = req.body;
 
     if (!type) {
       return res.status(400).json({ message: 'Banner type is required' });
@@ -37,12 +37,12 @@ router.post('/upload', async (req, res) => {
     const count = await Banner.countDocuments({ type });
 
     if (count >= maxLimit) {
+      if (req.file) fs.unlinkSync(req.file.path); // delete if uploaded
       return res.status(400).json({ message: `Only ${maxLimit} banners allowed for ${type}` });
     }
 
     let bannerData = { type };
 
-    // Handle product-based banners (no file upload needed)
     if (type === 'product-type' || type === 'side') {
       if (!productId) {
         return res.status(400).json({ message: 'Product selection is required for product-based banners' });
@@ -63,54 +63,35 @@ router.post('/upload', async (req, res) => {
         } : undefined,
       };
     } else {
-      // Handle regular banners with file upload
-      return new Promise((resolve, reject) => {
-        upload.single('image')(req, res, async (err) => {
-          if (err) {
-            return res.status(400).json({ message: 'File upload failed' });
-          }
+      if (!req.file) {
+        return res.status(400).json({ message: 'Image file is required for this banner type' });
+      }
 
-          if (!req.file) {
-            return res.status(400).json({ message: 'Image file is required for this banner type' });
-          }
+      if (!hash) {
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ message: 'File hash is required' });
+      }
 
-          const { hash } = req.body;
-          if (!hash) {
-            fs.unlinkSync(req.file.path);
-            return res.status(400).json({ message: 'File hash is required' });
-          }
+      const existing = await Banner.findOne({ type, hash });
+      if (existing) {
+        fs.unlinkSync(req.file.path);
+        return res.status(409).json({ message: 'This image already exists in the selected type' });
+      }
 
-          const existing = await Banner.findOne({ type, hash });
-          if (existing) {
-            fs.unlinkSync(req.file.path);
-            return res.status(409).json({ message: 'This image already exists in the selected type' });
-          }
-
-          bannerData = {
-            ...bannerData,
-            imageUrl: `/${uploadDir}/${req.file.filename}`,
-            hash,
-            title: title || '',
-          };
-
-          try {
-            const banner = new Banner(bannerData);
-            await banner.save();
-            res.status(201).json(banner);
-          } catch (error) {
-            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-            res.status(500).json({ message: 'Server error', error: error.message });
-          }
-        });
-      });
+      bannerData = {
+        ...bannerData,
+        imageUrl: `/${uploadDir}/${req.file.filename}`,
+        hash,
+        title: title || '',
+      };
     }
 
-    // Save product-based banner
     const banner = new Banner(bannerData);
     await banner.save();
     res.status(201).json(banner);
 
   } catch (err) {
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
