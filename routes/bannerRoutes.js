@@ -1,4 +1,3 @@
-// routes/bannerRoutes.js
 import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
@@ -8,20 +7,53 @@ import Banner from '../models/Banner.js';
 const router = express.Router();
 
 const uploadDir = 'uploads';
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
 });
+
 const upload = multer({ storage });
 
+/**
+ * Middleware to handle single file upload from either 'image' or 'bannerImage'
+ */
+const handleImageUpload = (req, res, next) => {
+  const singleUpload = upload.single('image');
+
+  singleUpload(req, res, function (err) {
+    if (err || !req.file) {
+      // Try 'bannerImage' key
+      const fallbackUpload = upload.single('bannerImage');
+      fallbackUpload(req, res, function (err2) {
+        if (err2 || !req.file) {
+          return res.status(400).json({ message: 'File upload failed. Please use "image" or "bannerImage".' });
+        }
+        next();
+      });
+    } else {
+      next();
+    }
+  });
+};
+
 // POST /upload
-router.post('/upload', upload.single('image'), async (req, res) => {
+router.post('/upload', handleImageUpload, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
-    const { type, hash, title, price, weightValue, weightUnit, oldPrice, discountPercent } = req.body;
+    const {
+      type,
+      hash,
+      title,
+      price,
+      oldPrice,
+      discountPercent,
+      weightValue,
+      weightUnit,
+    } = req.body;
+
     if (!type || !hash) {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({ message: 'Missing type or hash' });
@@ -33,6 +65,7 @@ router.post('/upload', upload.single('image'), async (req, res) => {
       offer: 1,
       'product-type': 10,
     };
+
     const maxLimit = typeLimits[type] || 10;
 
     const existing = await Banner.findOne({ type, hash });
@@ -47,24 +80,23 @@ router.post('/upload', upload.single('image'), async (req, res) => {
       return res.status(400).json({ message: `Only ${maxLimit} banners allowed for ${type}` });
     }
 
-  const banner = new Banner({
-    imageUrl: `/${uploadDir}/${req.file.filename}`,
-    type,
-    hash,
-    ...(title ? { title } : {}),  // ✅ Save title for all types
-    ...(type === 'product-type' && price ? { price: parseFloat(price) } : {}),
-    ...(type === 'product-type' && oldPrice ? { oldPrice: parseFloat(oldPrice) } : {}),
-    ...(type === 'product-type' && discountPercent ? { discountPercent: parseFloat(discountPercent) } : {}),
-    ...(type === 'product-type' && weightValue && weightUnit
-      ? { weight: { value: parseFloat(weightValue), unit: weightUnit } }
-      : {}),
-  });
+    const newBanner = new Banner({
+      imageUrl: `/${uploadDir}/${req.file.filename}`,
+      type,
+      hash,
+      title: title || '',
+      ...(type === 'product-type' && price && { price: parseFloat(price) }),
+      ...(type === 'product-type' && oldPrice && { oldPrice: parseFloat(oldPrice) }),
+      ...(type === 'product-type' && discountPercent && { discountPercent: parseFloat(discountPercent) }),
+      ...(type === 'product-type' && weightValue && weightUnit && {
+        weight: { value: parseFloat(weightValue), unit: weightUnit },
+      }),
+    });
 
-    await banner.save();
-    res.status(201).json(banner);
+    await newBanner.save();
+    res.status(201).json(newBanner);
   } catch (err) {
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-    if (err.code === 11000) return res.status(409).json({ message: 'Duplicate entry.' });
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
@@ -72,7 +104,16 @@ router.post('/upload', upload.single('image'), async (req, res) => {
 // PUT /:id
 router.put('/:id', upload.single('image'), async (req, res) => {
   try {
-    const { type, title, price, weightValue, weightUnit, oldPrice, discountPercent } = req.body;
+    const {
+      type,
+      title,
+      price,
+      oldPrice,
+      discountPercent,
+      weightValue,
+      weightUnit,
+    } = req.body;
+
     const updates = {};
     if (type) updates.type = type;
     if (title) updates.title = title;
@@ -82,6 +123,7 @@ router.put('/:id', upload.single('image'), async (req, res) => {
     if (weightValue && weightUnit) {
       updates.weight = { value: parseFloat(weightValue), unit: weightUnit };
     }
+
     if (req.file) {
       updates.imageUrl = `/${uploadDir}/${req.file.filename}`;
     }
@@ -120,4 +162,4 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-export default router; // ✅ ES module export
+export default router;
