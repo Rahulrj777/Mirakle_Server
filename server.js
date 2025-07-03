@@ -10,8 +10,19 @@ dotenv.config();
 
 const app = express();
 
+const allowedOrigins = [
+  "https://mirakle-admin.vercel.app",
+  "https://mirakle-client.vercel.app",
+];
+
 const corsOptions = {
-  origin: "*", // TEMP: allow all origins. After testing, restrict if needed.
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
 };
 
