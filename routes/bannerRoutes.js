@@ -22,14 +22,14 @@ const upload = multer({ storage });
 /**
  * Middleware to handle either 'image' or 'bannerImage' fields
  */
-const uploadMiddleware = (req, res, next) => {
-  const imageUpload = upload.single('image');
-  imageUpload(req, res, function (err) {
+const handleImageUpload = (req, res, next) => {
+  const singleUpload = upload.single('image');
+  singleUpload(req, res, function (err) {
     if (err || !req.file) {
-      const fallback = upload.single('bannerImage');
-      fallback(req, res, function (err2) {
+      const fallbackUpload = upload.single('bannerImage');
+      fallbackUpload(req, res, function (err2) {
         if (err2 || !req.file) {
-          return res.status(400).json({ message: 'File upload failed. Use "image" or "bannerImage"' });
+          return res.status(400).json({ message: 'File upload failed. Please use "image" or "bannerImage".' });
         }
         next();
       });
@@ -40,7 +40,7 @@ const uploadMiddleware = (req, res, next) => {
 };
 
 // === POST: Upload Banner ===
-router.post('/upload', uploadMiddleware, async (req, res) => {
+router.post('/upload', handleImageUpload, async (req, res) => {
   try {
     const { type, hash, title, price, oldPrice, discountPercent, weightValue, weightUnit, productIds } = req.body;
 
