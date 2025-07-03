@@ -6,13 +6,11 @@ import Banner from "../models/Banner.js"
 
 const router = express.Router()
 
-// Ensure upload directory exists
 const uploadDir = "uploads"
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true })
 }
 
-// Multer configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
@@ -28,12 +26,6 @@ const upload = multer({
       cb(new Error("Only image files are allowed"), false)
     }
   },
-})
-
-// Debug middleware
-router.use((req, res, next) => {
-  console.log(`🔥 BANNER ROUTE: ${req.method} ${req.originalUrl}`)
-  next()
 })
 
 // Test route
@@ -58,7 +50,7 @@ router.get("/", async (req, res) => {
   }
 })
 
-// POST upload with better duplicate handling
+// POST upload - SIMPLIFIED (no duplicate checking)
 router.post("/upload", (req, res) => {
   upload.single("image")(req, res, async (err) => {
     if (err) {
@@ -119,7 +111,7 @@ router.post("/upload", (req, res) => {
           fs.unlinkSync(req.file.path)
         }
 
-        // Check for existing product banner of same type
+        // Check for existing product banner (manual duplicate check)
         const existingProductBanner = await Banner.findOne({
           type,
           productId,
@@ -154,26 +146,15 @@ router.post("/upload", (req, res) => {
           return res.status(400).json({ message: "Image file is required for this banner type" })
         }
 
-        if (!hash) {
-          fs.unlinkSync(req.file.path)
-          return res.status(400).json({ message: "File hash is required" })
-        }
-
-        // Check for duplicates (only for regular banners with hash)
-        const existing = await Banner.findOne({ type, hash })
-        if (existing) {
-          fs.unlinkSync(req.file.path)
-          return res.status(409).json({ message: "This image already exists in the selected type" })
-        }
-
+        // SIMPLIFIED: No hash duplicate checking, just save
         bannerData = {
           ...bannerData,
           imageUrl: `/${uploadDir}/${req.file.filename}`,
-          hash,
+          hash: hash || null, // Allow hash to be null
         }
       }
 
-      // Save to database
+      // Save to database - NO duplicate checking
       const banner = new Banner(bannerData)
       const savedBanner = await banner.save()
 
@@ -187,13 +168,7 @@ router.post("/upload", (req, res) => {
         fs.unlinkSync(req.file.path)
       }
 
-      // Handle specific MongoDB errors
-      if (error.code === 11000) {
-        return res.status(409).json({
-          message: "Duplicate entry detected. This banner already exists.",
-        })
-      }
-
+      // Handle any MongoDB errors gracefully
       res.status(500).json({
         message: "Server error during upload",
         error: error.message,

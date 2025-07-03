@@ -4,7 +4,7 @@ const bannerSchema = new mongoose.Schema(
   {
     type: { type: String, required: true },
     imageUrl: { type: String },
-    hash: { type: String }, // No unique constraint here
+    hash: { type: String }, // No unique constraint at all
     title: { type: String },
     productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
     selectedVariantIndex: { type: Number, default: 0 },
@@ -21,18 +21,6 @@ const bannerSchema = new mongoose.Schema(
   },
 )
 
-// FIXED: Only create unique index for regular banners that actually have a hash
-// Product banners don't have hash, so they shouldn't be part of this index
-bannerSchema.index(
-  { hash: 1, type: 1 },
-  {
-    unique: true,
-    partialFilterExpression: {
-      hash: { $exists: true, $ne: null, $ne: "" }, // Only when hash actually exists and is not empty
-    },
-  },
-)
-
+// NO INDEX AT ALL - Let duplicates happen, we'll handle it in code
 const Banner = mongoose.model("Banner", bannerSchema)
-
 export default Banner
