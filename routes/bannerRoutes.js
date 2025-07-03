@@ -28,28 +28,6 @@ const upload = multer({
   },
 })
 
-// Test route
-router.get("/test", (req, res) => {
-  res.json({
-    message: "Banner routes working!",
-    timestamp: new Date().toISOString(),
-  })
-})
-
-// GET all banners
-router.get("/", async (req, res) => {
-  try {
-    const banners = await Banner.find().populate("productId", "title images variants")
-    res.json(banners)
-  } catch (error) {
-    console.error("❌ GET banners error:", error)
-    res.status(500).json({
-      message: "Failed to fetch banners",
-      error: error.message,
-    })
-  }
-})
-
 router.put("/:id", upload.single("image"), async (req, res) => {
   try {
     const banner = await Banner.findById(req.params.id)
@@ -81,6 +59,28 @@ router.put("/:id", upload.single("image"), async (req, res) => {
   }
 })
 
+
+// Test route
+router.get("/test", (req, res) => {
+  res.json({
+    message: "Banner routes working!",
+    timestamp: new Date().toISOString(),
+  })
+})
+
+// GET all banners
+router.get("/", async (req, res) => {
+  try {
+    const banners = await Banner.find().populate("productId", "title images variants")
+    res.json(banners)
+  } catch (error) {
+    console.error("❌ GET banners error:", error)
+    res.status(500).json({
+      message: "Failed to fetch banners",
+      error: error.message,
+    })
+  }
+})
 
 // POST upload - SIMPLIFIED (no duplicate checking)
 router.post("/upload", (req, res) => {
@@ -147,6 +147,7 @@ router.post("/upload", (req, res) => {
         const existingProductBanner = await Banner.findOne({
           type,
           productId,
+          selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
         })
 
         if (existingProductBanner) {
