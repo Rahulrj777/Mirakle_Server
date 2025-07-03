@@ -10,7 +10,6 @@ const router = express.Router()
 const uploadDir = "uploads"
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true })
-  console.log("✅ Created uploads directory")
 }
 
 // Multer configuration
@@ -21,7 +20,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith("image/")) {
       cb(null, true)
@@ -34,27 +33,21 @@ const upload = multer({
 // Debug middleware
 router.use((req, res, next) => {
   console.log(`🔥 BANNER ROUTE: ${req.method} ${req.originalUrl}`)
-  console.log("🔥 Content-Type:", req.headers["content-type"])
   next()
 })
 
 // Test route
 router.get("/test", (req, res) => {
-  console.log("✅ Banner test route working")
   res.json({
     message: "Banner routes working!",
     timestamp: new Date().toISOString(),
-    uploadDir: uploadDir,
-    uploadsExists: fs.existsSync(uploadDir),
   })
 })
 
 // GET all banners
 router.get("/", async (req, res) => {
-  console.log("🔥 GET BANNERS")
   try {
     const banners = await Banner.find().populate("productId", "title images variants")
-    console.log(`✅ Found ${banners.length} banners`)
     res.json(banners)
   } catch (error) {
     console.error("❌ GET banners error:", error)
@@ -65,28 +58,13 @@ router.get("/", async (req, res) => {
   }
 })
 
-// POST upload with comprehensive error handling
+// POST upload with better duplicate handling
 router.post("/upload", (req, res) => {
-  console.log("🔥 UPLOAD START")
-  console.log("📝 Headers:", req.headers)
-
-  // Check content type
-  const isMultipart = req.headers["content-type"]?.includes("multipart/form-data")
-  if (!isMultipart) {
-    console.log("❌ Invalid content type")
-    return res.status(400).json({ message: "Invalid content type. Expected multipart/form-data" })
-  }
-
-  // Use multer to parse form data
   upload.single("image")(req, res, async (err) => {
     if (err) {
       console.log("❌ Multer error:", err.message)
       return res.status(400).json({ message: `Upload error: ${err.message}` })
     }
-
-    console.log("✅ Multer processed successfully")
-    console.log("📝 Body:", req.body)
-    console.log("📁 File:", req.file ? "Present" : "Not present")
 
     try {
       const {
@@ -103,13 +81,10 @@ router.post("/upload", (req, res) => {
         productImageUrl,
       } = req.body
 
-      // Validate required fields
       if (!type) {
         if (req.file) fs.unlinkSync(req.file.path)
         return res.status(400).json({ message: "Banner type is required" })
       }
-
-      console.log("✅ Type:", type)
 
       // Check type limits
       const typeLimits = {
@@ -121,7 +96,6 @@ router.post("/upload", (req, res) => {
 
       const maxLimit = typeLimits[type] || 10
       const count = await Banner.countDocuments({ type })
-      console.log(`📊 Current count for ${type}: ${count}/${maxLimit}`)
 
       if (count >= maxLimit) {
         if (req.file) fs.unlinkSync(req.file.path)
@@ -135,8 +109,6 @@ router.post("/upload", (req, res) => {
 
       // Handle product-based banners
       if (type === "product-type" || type === "side") {
-        console.log("🛍️ Processing product-based banner")
-
         if (!productId) {
           if (req.file) fs.unlinkSync(req.file.path)
           return res.status(400).json({ message: "Product ID is required for product-based banners" })
@@ -145,7 +117,19 @@ router.post("/upload", (req, res) => {
         // Clean up uploaded file (not needed for product banners)
         if (req.file) {
           fs.unlinkSync(req.file.path)
-          console.log("🗑️ Cleaned up unnecessary file for product banner")
+        }
+
+        // Check for existing product banner of same type
+        const existingProductBanner = await Banner.findOne({
+          type,
+          productId,
+          selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
+        })
+
+        if (existingProductBanner) {
+          return res.status(409).json({
+            message: "This product variant is already added as a banner of this type",
+          })
         }
 
         bannerData = {
@@ -164,12 +148,8 @@ router.post("/upload", (req, res) => {
             unit: weightUnit,
           }
         }
-
-        console.log("💾 Product banner data:", bannerData)
       } else {
         // Handle regular banners (require image file)
-        console.log("🖼️ Processing regular banner")
-
         if (!req.file) {
           return res.status(400).json({ message: "Image file is required for this banner type" })
         }
@@ -179,7 +159,7 @@ router.post("/upload", (req, res) => {
           return res.status(400).json({ message: "File hash is required" })
         }
 
-        // Check for duplicates
+        // Check for duplicates (only for regular banners with hash)
         const existing = await Banner.findOne({ type, hash })
         if (existing) {
           fs.unlinkSync(req.file.path)
@@ -191,16 +171,13 @@ router.post("/upload", (req, res) => {
           imageUrl: `/${uploadDir}/${req.file.filename}`,
           hash,
         }
-
-        console.log("💾 Regular banner data:", bannerData)
       }
 
       // Save to database
-      console.log("💾 Saving banner to database...")
       const banner = new Banner(bannerData)
       const savedBanner = await banner.save()
 
-      console.log("✅ Banner saved successfully:", savedBanner._id)
+      console.log("✅ Banner saved successfully")
       res.status(201).json(savedBanner)
     } catch (error) {
       console.error("❌ Upload error:", error)
@@ -208,12 +185,13 @@ router.post("/upload", (req, res) => {
       // Clean up file if error occurs
       if (req.file && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path)
-        console.log("🗑️ Cleaned up file after error")
       }
 
       // Handle specific MongoDB errors
       if (error.code === 11000) {
-        return res.status(409).json({ message: "Duplicate entry detected" })
+        return res.status(409).json({
+          message: "Duplicate entry detected. This banner already exists.",
+        })
       }
 
       res.status(500).json({
@@ -221,15 +199,11 @@ router.post("/upload", (req, res) => {
         error: error.message,
       })
     }
-
-    console.log("🔥 UPLOAD END")
   })
 })
 
 // DELETE banner
 router.delete("/:id", async (req, res) => {
-  console.log("🔥 DELETE:", req.params.id)
-
   try {
     const banner = await Banner.findByIdAndDelete(req.params.id)
     if (!banner) {
@@ -241,11 +215,9 @@ router.delete("/:id", async (req, res) => {
       const filePath = path.join(uploadDir, path.basename(banner.imageUrl))
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath)
-        console.log("✅ File deleted:", filePath)
       }
     }
 
-    console.log("✅ Banner deleted successfully")
     res.json({ message: "Banner deleted successfully" })
   } catch (error) {
     console.error("❌ Delete error:", error)
