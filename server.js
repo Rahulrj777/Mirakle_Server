@@ -1,72 +1,66 @@
 import express from "express"
-import mongoose from "mongoose"
-import dotenv from "dotenv"
 import cors from "cors"
-import bannerRoutes from "./routes/bannerRoutes.js" // EXACT filename match
-import productRoutes from "./routes/productRoutes.js"
-import userRoutes from "./routes/userRoutes.js"
-
-dotenv.config()
 
 const app = express()
 
-const allowedOrigins = ["https://mirakle-admin.vercel.app", "https://mirakle-client.vercel.app"]
-
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`)
-  console.log("Origin:", req.headers.origin)
-  next()
-})
-
+// Enable CORS for your admin panel
 app.use(
   cors({
-    origin: (origin, callback) => {
-      console.log("CORS check for origin:", origin)
-      if (!origin || allowedOrigins.includes(origin)) {
-        console.log("✅ CORS allowed")
-        callback(null, true)
-      } else {
-        console.log("❌ CORS blocked")
-        callback(new Error("Not allowed by CORS"))
-      }
-    },
+    origin: ["https://mirakle-admin.vercel.app", "http://localhost:3000"],
     credentials: true,
   }),
 )
 
-app.use(express.json({ limit: "50mb" }))
-app.use(express.urlencoded({ extended: true, limit: "50mb" }))
-app.use("/uploads", express.static("uploads"))
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
 
-app.get("/api/test", (req, res) => {
-  console.log("✅ Test endpoint hit")
-  res.json({ message: "Server is working", timestamp: new Date().toISOString() })
-})
-
-// Register routes
-console.log("🔧 Registering routes...")
-app.use("/api/products", productRoutes)
-app.use("/api/banners", bannerRoutes) // Make sure this matches the import
-app.use("/api", userRoutes)
-console.log("✅ Routes registered")
-
+// Test routes
 app.get("/", (req, res) => {
   console.log("✅ Root endpoint hit")
-  res.send("Mirakle Server is Running")
+  res.json({ message: "Test server is running", timestamp: new Date().toISOString() })
 })
 
-app.use((err, req, res, next) => {
-  console.error("❌ Server Error:", err)
-  res.status(500).json({ message: "Server error", error: err.message })
+app.get("/api/test", (req, res) => {
+  console.log("✅ API test endpoint hit")
+  res.json({ message: "API is working", timestamp: new Date().toISOString() })
 })
 
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => console.error("❌ MongoDB connection error:", err))
+// Banner test routes
+app.get("/api/banners/test", (req, res) => {
+  console.log("✅ Banner test endpoint hit")
+  res.json({ message: "Banner routes are working!", timestamp: new Date().toISOString() })
+})
+
+app.get("/api/banners", (req, res) => {
+  console.log("✅ Get banners endpoint hit")
+  res.json({ message: "Get banners working", banners: [] })
+})
+
+app.post("/api/banners/upload", (req, res) => {
+  console.log("✅ Upload endpoint hit")
+  console.log("Body:", req.body)
+  console.log("Headers:", req.headers)
+  res.json({ message: "Upload endpoint working", received: Object.keys(req.body) })
+})
+
+// Catch all other routes
+app.use("*", (req, res) => {
+  console.log(`❌ Route not found: ${req.method} ${req.originalUrl}`)
+  res.status(404).json({
+    message: "Route not found",
+    method: req.method,
+    url: req.originalUrl,
+    timestamp: new Date().toISOString(),
+  })
+})
 
 const PORT = process.env.PORT || 7000
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`)
-  console.log("Allowed origins:", allowedOrigins)
+  console.log(`🚀 Test server running on port ${PORT}`)
+  console.log(`📍 Test URLs:`)
+  console.log(`   Root: http://localhost:${PORT}/`)
+  console.log(`   API Test: http://localhost:${PORT}/api/test`)
+  console.log(`   Banner Test: http://localhost:${PORT}/api/banners/test`)
+  console.log(`   Get Banners: http://localhost:${PORT}/api/banners`)
+  console.log(`   Upload Test: http://localhost:${PORT}/api/banners/upload`)
 })
