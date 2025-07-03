@@ -1,21 +1,38 @@
+// Make sure this is your MAIN server file (not server-debug.js)
 import express from "express"
+import mongoose from "mongoose"
+import dotenv from "dotenv"
 import cors from "cors"
-import bannerRoutes from "./simple-banner-routes.js"
+import bannerRoutes from "./routes/bannerRoutes.js" // EXACT filename match
+import productRoutes from "./routes/productRoutes.js"
+import userRoutes from "./routes/userRoutes.js"
+
+dotenv.config()
 
 const app = express()
+
+const allowedOrigins = ["https://mirakle-admin.vercel.app", "https://mirakle-client.vercel.app"]
 
 // Request logging
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`)
   console.log("Origin:", req.headers.origin)
-  console.log("User-Agent:", req.headers["user-agent"])
   next()
 })
 
-// CORS
+// CORS configuration
 app.use(
   cors({
-    origin: ["https://mirakle-admin.vercel.app", "http://localhost:3000"],
+    origin: (origin, callback) => {
+      console.log("CORS check for origin:", origin)
+      if (!origin || allowedOrigins.includes(origin)) {
+        console.log("✅ CORS allowed")
+        callback(null, true)
+      } else {
+        console.log("❌ CORS blocked")
+        callback(new Error("Not allowed by CORS"))
+      }
+    },
     credentials: true,
   }),
 )
@@ -23,67 +40,46 @@ app.use(
 app.use(express.json({ limit: "50mb" }))
 app.use(express.urlencoded({ extended: true, limit: "50mb" }))
 
-// Root route
+app.use("/uploads", express.static("uploads"))
+
+// Test route
+app.get("/api/test", (req, res) => {
+  console.log("✅ Test endpoint hit")
+  res.json({
+    message: "Server is working",
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV,
+  })
+})
+
+// Register routes
+console.log("🔧 Registering routes...")
+app.use("/api/products", productRoutes)
+app.use("/api/banners", bannerRoutes) // Make sure this matches the import
+app.use("/api", userRoutes)
+console.log("✅ Routes registered")
+
 app.get("/", (req, res) => {
   console.log("✅ Root endpoint hit")
-  res.json({
-    message: "Working server is running",
-    timestamp: new Date().toISOString(),
-    availableRoutes: [
-      "GET /",
-      "GET /api/test",
-      "GET /api/banners",
-      "GET /api/banners/test",
-      "POST /api/banners/upload",
-    ],
-  })
+  res.send("Mirakle Server is Running")
 })
 
-// API test route
-app.get("/api/test", (req, res) => {
-  console.log("✅ API test endpoint hit")
-  res.json({ message: "API working", timestamp: new Date().toISOString() })
-})
-
-// Register banner routes
-console.log("🔧 Registering banner routes...")
-app.use("/api/banners", bannerRoutes)
-console.log("✅ Banner routes registered")
-
-// 404 handler
-app.use("*", (req, res) => {
-  console.log(`❌ Route not found: ${req.method} ${req.originalUrl}`)
-  res.status(404).json({
-    message: "Route not found",
-    method: req.method,
-    url: req.originalUrl,
-    availableRoutes: [
-      "GET /",
-      "GET /api/test",
-      "GET /api/banners",
-      "GET /api/banners/test",
-      "POST /api/banners/upload",
-    ],
-  })
-})
-
-// Error handler
+// Error handling middleware
 app.use((err, req, res, next) => {
   console.error("❌ Server Error:", err)
   res.status(500).json({
     message: "Server error",
-    error: err.message,
-    timestamp: new Date().toISOString(),
+    error: process.env.NODE_ENV === "development" ? err.message : "Internal server error",
   })
 })
 
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => console.error("❌ MongoDB connection error:", err))
+
 const PORT = process.env.PORT || 7000
 app.listen(PORT, () => {
-  console.log(`🚀 Working server running on port ${PORT}`)
-  console.log("📍 Available endpoints:")
-  console.log(`   Root: http://localhost:${PORT}/`)
-  console.log(`   API Test: http://localhost:${PORT}/api/test`)
-  console.log(`   Banner Test: http://localhost:${PORT}/api/banners/test`)
-  console.log(`   Get Banners: http://localhost:${PORT}/api/banners`)
-  console.log(`   Upload: http://localhost:${PORT}/api/banners/upload`)
+  console.log(`✅ Server running on port ${PORT}`)
+  console.log("Allowed origins:", allowedOrigins)
 })
