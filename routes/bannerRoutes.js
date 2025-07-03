@@ -1,89 +1,91 @@
+// routes/bannerRoutes.js
 import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import Banner from '../models/Banner.js';
-import Product from '../models/Product.js';
 
 const router = express.Router();
 
-// === Setup Upload Directory ===
 const uploadDir = 'uploads';
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
-// === Multer Storage Config ===
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
 });
-
 const upload = multer({ storage });
 
-/**
- * Middleware to handle either 'image' or 'bannerImage' fields
- */
-const handleImageUpload = (req, res, next) => {
-  const singleUpload = upload.single('image');
-  singleUpload(req, res, function (err) {
-    if (err || !req.file) {
-      const fallbackUpload = upload.single('bannerImage');
-      fallbackUpload(req, res, function (err2) {
-        if (err2 || !req.file) {
-          return res.status(400).json({ message: 'File upload failed. Please use "image" or "bannerImage".' });
-        }
+// POST /upload
+router.post('/upload', (req, res, next) => {
+  const uploader = upload.single('image');
+  uploader(req, res, function (err) {
+    if (err) {
+      // Try with 'bannerImage'
+      upload.single('bannerImage')(req, res, function (err2) {
+        if (err2) return res.status(400).json({ message: "Upload failed" });
         next();
       });
     } else {
       next();
     }
   });
-};
-
-// === POST: Upload Banner ===
-router.post('/upload', handleImageUpload, async (req, res) => {
+}, async (req, res) => {
   try {
-    const { type, hash, title, price, oldPrice, discountPercent, weightValue, weightUnit, productIds } = req.body;
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
-    const bannerData = { type };
-
-    if (type === 'top-selling' || type === 'product-type') {
-      bannerData.productIds = JSON.parse(productIds || '[]');
-    } else {
-      if (!req.file || !hash) throw new Error('Missing image or hash');
-      bannerData.hash = hash;
-      bannerData.imageUrl = `/${uploadDir}/${req.file.filename}`;
-      bannerData.title = title || '';
-      if (type === 'product-type') {
-        bannerData.price = parseFloat(price) || 0;
-        bannerData.oldPrice = parseFloat(oldPrice) || 0;
-        bannerData.discountPercent = parseFloat(discountPercent) || 0;
-        bannerData.weight = weightValue && weightUnit ? { value: parseFloat(weightValue), unit: weightUnit } : undefined;
-      }
+    const { type, hash, title, price, weightValue, weightUnit, oldPrice, discountPercent } = req.body;
+    if (!type || !hash) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ message: 'Missing type or hash' });
     }
 
-    const banner = new Banner(bannerData);
+    const typeLimits = {
+      slider: 5,
+      side: 3,
+      offer: 1,
+      'product-type': 10,
+    };
+    const maxLimit = typeLimits[type] || 10;
+
+    const existing = await Banner.findOne({ type, hash });
+    if (existing) {
+      fs.unlinkSync(req.file.path);
+      return res.status(409).json({ message: 'Duplicate image in this banner type' });
+    }
+
+    const count = await Banner.countDocuments({ type });
+    if (count >= maxLimit) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ message: `Only ${maxLimit} banners allowed for ${type}` });
+    }
+
+  const banner = new Banner({
+    imageUrl: `/${uploadDir}/${req.file.filename}`,
+    type,
+    hash,
+    ...(title ? { title } : {}),  // ✅ Save title for all types
+    ...(type === 'product-type' && price ? { price: parseFloat(price) } : {}),
+    ...(type === 'product-type' && oldPrice ? { oldPrice: parseFloat(oldPrice) } : {}),
+    ...(type === 'product-type' && discountPercent ? { discountPercent: parseFloat(discountPercent) } : {}),
+    ...(type === 'product-type' && weightValue && weightUnit
+      ? { weight: { value: parseFloat(weightValue), unit: weightUnit } }
+      : {}),
+  });
+
     await banner.save();
     res.status(201).json(banner);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: err.message });
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    if (err.code === 11000) return res.status(409).json({ message: 'Duplicate entry.' });
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
-// === PUT: Update Existing Banner ===
+// PUT /:id
 router.put('/:id', upload.single('image'), async (req, res) => {
   try {
-    const {
-      type,
-      title,
-      price,
-      oldPrice,
-      discountPercent,
-      weightValue,
-      weightUnit,
-      productIds
-    } = req.body;
-
+    const { type, title, price, weightValue, weightUnit, oldPrice, discountPercent } = req.body;
     const updates = {};
     if (type) updates.type = type;
     if (title) updates.title = title;
@@ -92,9 +94,6 @@ router.put('/:id', upload.single('image'), async (req, res) => {
     if (discountPercent) updates.discountPercent = parseFloat(discountPercent);
     if (weightValue && weightUnit) {
       updates.weight = { value: parseFloat(weightValue), unit: weightUnit };
-    }
-    if (productIds) {
-      updates.productIds = JSON.parse(productIds);
     }
     if (req.file) {
       updates.imageUrl = `/${uploadDir}/${req.file.filename}`;
@@ -109,29 +108,24 @@ router.put('/:id', upload.single('image'), async (req, res) => {
   }
 });
 
-// === GET: Fetch Banners ===
+// GET /
 router.get('/', async (req, res) => {
   try {
-    const { type } = req.query;
-    const query = type ? { type } : {};
-
-    const banners = await Banner.find(query).populate('productIds', 'title images'); // fetch product title/images
+    const banners = await Banner.find();
     res.json(banners);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// === DELETE: Remove Banner ===
+// DELETE /:id
 router.delete('/:id', async (req, res) => {
   try {
     const banner = await Banner.findByIdAndDelete(req.params.id);
     if (!banner) return res.status(404).json({ message: 'Banner not found' });
 
-    if (banner.imageUrl) {
-      const filePath = path.join('uploads', path.basename(banner.imageUrl));
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    }
+    const filePath = path.join('uploads', path.basename(banner.imageUrl));
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -139,4 +133,4 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-export default router;
+export default router; // ✅ ES module export
