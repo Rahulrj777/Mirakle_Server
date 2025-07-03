@@ -1,4 +1,3 @@
-// routes/bannerRoutes.js
 import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
@@ -19,168 +18,151 @@ const upload = multer({
   storage,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'));
-    }
   }
 });
 
-// POST /upload - Simplified version
+// Add debugging middleware
+router.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
+  next();
+});
+
+// Test route
+router.get('/test', (req, res) => {
+  res.json({ message: 'Banner routes working', timestamp: new Date().toISOString() });
+});
+
+// POST /upload - Completely rewritten
 router.post('/upload', async (req, res) => {
   console.log('=== UPLOAD REQUEST START ===');
-  console.log('Request body keys:', Object.keys(req.body));
-  console.log('Request type:', req.body.type);
+  console.log('Content-Type:', req.headers['content-type']);
+  console.log('Body keys:', Object.keys(req.body));
 
   try {
-    const { type } = req.body;
-
-    if (!type) {
-      console.log('❌ No type provided');
-      return res.status(400).json({ message: 'Banner type is required' });
-    }
-
-    console.log('✅ Banner type:', type);
-
-    // Check limits
-    const typeLimits = {
-      slider: 5,
-      side: 3,
-      offer: 1,
-      'product-type': 10,
-    };
-
-    const maxLimit = typeLimits[type] || 10;
-    const count = await Banner.countDocuments({ type });
-    console.log(`📊 Current count for ${type}: ${count}/${maxLimit}`);
-
-    if (count >= maxLimit) {
-      console.log('❌ Limit exceeded');
-      return res.status(400).json({ message: `Only ${maxLimit} banners allowed for ${type}` });
-    }
-
-    // Handle product-based banners
-    if (type === 'product-type' || type === 'side') {
-      console.log('🛍️ Processing product-based banner');
-      
-      const {
-        productId,
-        selectedVariantIndex,
-        productImageUrl,
-        title,
-        price,
-        oldPrice,
-        discountPercent,
-        weightValue,
-        weightUnit
-      } = req.body;
-
-      if (!productId) {
-        console.log('❌ No product ID provided');
-        return res.status(400).json({ message: 'Product selection is required' });
-      }
-
-      console.log('✅ Product ID:', productId);
-
-      const bannerData = {
-        type,
-        productId,
-        selectedVariantIndex: parseInt(selectedVariantIndex) || 0,
-        imageUrl: productImageUrl || '',
-        title: title || '',
-        price: parseFloat(price) || 0,
-        oldPrice: parseFloat(oldPrice) || 0,
-        discountPercent: parseFloat(discountPercent) || 0,
-      };
-
-      if (weightValue && weightUnit) {
-        bannerData.weight = {
-          value: parseFloat(weightValue),
-          unit: weightUnit
-        };
-      }
-
-      console.log('💾 Saving product banner:', bannerData);
-
-      const banner = new Banner(bannerData);
-      await banner.save();
-      
-      console.log('✅ Product banner saved successfully');
-      return res.status(201).json(banner);
-    }
-
-    // Handle regular banners with file upload
-    console.log('🖼️ Processing regular banner with file upload');
+    // First, determine the banner type
+    let type;
     
-    // Use multer middleware for file upload
-    upload.single('image')(req, res, async (err) => {
-      if (err) {
-        console.log('❌ Multer error:', err.message);
-        return res.status(400).json({ message: `File upload error: ${err.message}` });
-      }
-
-      console.log('📁 File upload processed');
-      console.log('File info:', req.file ? {
-        filename: req.file.filename,
-        size: req.file.size,
-        mimetype: req.file.mimetype
-      } : 'No file');
-
-      if (!req.file) {
-        console.log('❌ No file uploaded');
-        return res.status(400).json({ message: 'Image file is required' });
-      }
-
-      const { hash, title } = req.body;
-
-      if (!hash) {
-        console.log('❌ No hash provided, deleting uploaded file');
-        fs.unlinkSync(req.file.path);
-        return res.status(400).json({ message: 'File hash is required' });
-      }
-
-      console.log('✅ Hash provided:', hash);
-
-      try {
-        // Check for duplicates
-        const existing = await Banner.findOne({ type, hash });
-        if (existing) {
-          console.log('❌ Duplicate found, deleting uploaded file');
-          fs.unlinkSync(req.file.path);
-          return res.status(409).json({ message: 'This image already exists in the selected type' });
+    // Handle multipart form data
+    if (req.headers['content-type']?.includes('multipart/form-data')) {
+      // Use multer to parse the form data first
+      upload.single('image')(req, res, async (err) => {
+        if (err) {
+          console.log('❌ Multer error:', err);
+          return res.status(400).json({ message: `Upload error: ${err.message}` });
         }
 
-        console.log('✅ No duplicate found');
+        console.log('✅ Multer processed successfully');
+        console.log('File:', req.file ? 'Present' : 'Not present');
+        console.log('Body after multer:', req.body);
 
-        const bannerData = {
+        const { type, hash, title, price, weightValue, weightUnit, oldPrice, discountPercent, productId, selectedVariantIndex, productImageUrl } = req.body;
+
+        if (!type) {
+          if (req.file) fs.unlinkSync(req.file.path);
+          return res.status(400).json({ message: 'Banner type is required' });
+        }
+
+        console.log('✅ Banner type:', type);
+
+        // Check limits
+        const typeLimits = {
+          slider: 5,
+          side: 3,
+          offer: 1,
+          'product-type': 10,
+        };
+
+        const maxLimit = typeLimits[type] || 10;
+        const count = await Banner.countDocuments({ type });
+        console.log(`📊 Current count for ${type}: ${count}/${maxLimit}`);
+
+        if (count >= maxLimit) {
+          if (req.file) fs.unlinkSync(req.file.path);
+          return res.status(400).json({ message: `Only ${maxLimit} banners allowed for ${type}` });
+        }
+
+        let bannerData = {
           type,
-          imageUrl: `/${uploadDir}/${req.file.filename}`,
-          hash,
           title: title || '',
         };
 
-        console.log('💾 Saving regular banner:', bannerData);
+        // Handle product-based banners
+        if (type === 'product-type' || type === 'side') {
+          console.log('🛍️ Processing product-based banner');
+          
+          if (!productId) {
+            if (req.file) fs.unlinkSync(req.file.path);
+            return res.status(400).json({ message: 'Product ID is required for product-based banners' });
+          }
 
-        const banner = new Banner(bannerData);
-        await banner.save();
-        
-        console.log('✅ Regular banner saved successfully');
-        res.status(201).json(banner);
+          bannerData = {
+            ...bannerData,
+            productId,
+            selectedVariantIndex: parseInt(selectedVariantIndex) || 0,
+            imageUrl: productImageUrl || '',
+            price: parseFloat(price) || 0,
+            oldPrice: parseFloat(oldPrice) || 0,
+            discountPercent: parseFloat(discountPercent) || 0,
+          };
 
-      } catch (saveError) {
-        console.log('❌ Save error:', saveError);
-        if (fs.existsSync(req.file.path)) {
-          fs.unlinkSync(req.file.path);
+          if (weightValue && weightUnit) {
+            bannerData.weight = {
+              value: parseFloat(weightValue),
+              unit: weightUnit
+            };
+          }
+
+          console.log('💾 Product banner data:', bannerData);
+
+        } else {
+          // Handle regular banners with file upload
+          console.log('🖼️ Processing regular banner');
+          
+          if (!req.file) {
+            return res.status(400).json({ message: 'Image file is required for this banner type' });
+          }
+
+          if (!hash) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({ message: 'File hash is required' });
+          }
+
+          // Check for duplicates
+          const existing = await Banner.findOne({ type, hash });
+          if (existing) {
+            fs.unlinkSync(req.file.path);
+            return res.status(409).json({ message: 'This image already exists in the selected type' });
+          }
+
+          bannerData = {
+            ...bannerData,
+            imageUrl: `/${uploadDir}/${req.file.filename}`,
+            hash,
+          };
+
+          console.log('💾 Regular banner data:', bannerData);
         }
-        res.status(500).json({ 
-          message: 'Failed to save banner', 
-          error: saveError.message 
-        });
-      }
-    });
+
+        // Save to database
+        try {
+          const banner = new Banner(bannerData);
+          await banner.save();
+          console.log('✅ Banner saved successfully');
+          res.status(201).json(banner);
+        } catch (saveError) {
+          console.log('❌ Save error:', saveError);
+          if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+          }
+          res.status(500).json({ 
+            message: 'Failed to save banner', 
+            error: saveError.message 
+          });
+        }
+      });
+    } else {
+      return res.status(400).json({ message: 'Invalid content type' });
+    }
 
   } catch (error) {
     console.log('❌ General error:', error);
@@ -193,85 +175,68 @@ router.post('/upload', async (req, res) => {
   console.log('=== UPLOAD REQUEST END ===');
 });
 
-// PUT /:id - Simplified version
+// PUT /:id - Simplified update
 router.put('/:id', async (req, res) => {
   console.log('=== UPDATE REQUEST START ===');
   console.log('Banner ID:', req.params.id);
-  console.log('Request body:', req.body);
 
   try {
-    const { type } = req.body;
+    // Handle multipart form data for updates
+    upload.single('image')(req, res, async (err) => {
+      if (err) {
+        console.log('❌ Update multer error:', err);
+        return res.status(400).json({ message: `Update error: ${err.message}` });
+      }
 
-    if (!type) {
-      return res.status(400).json({ message: 'Banner type is required' });
-    }
+      const { type, title, price, weightValue, weightUnit, oldPrice, discountPercent, productId, selectedVariantIndex, productImageUrl } = req.body;
 
-    // Handle product-based banner updates
-    if (type === 'product-type' || type === 'side') {
-      const {
-        productId,
-        selectedVariantIndex,
-        productImageUrl,
-        title,
-        price,
-        oldPrice,
-        discountPercent,
-        weightValue,
-        weightUnit
-      } = req.body;
+      if (!type) {
+        return res.status(400).json({ message: 'Banner type is required' });
+      }
 
-      const updates = {
+      let updates = {
         type,
-        productId,
-        selectedVariantIndex: parseInt(selectedVariantIndex) || 0,
-        imageUrl: productImageUrl || '',
         title: title || '',
-        price: parseFloat(price) || 0,
-        oldPrice: parseFloat(oldPrice) || 0,
-        discountPercent: parseFloat(discountPercent) || 0,
       };
 
-      if (weightValue && weightUnit) {
-        updates.weight = {
-          value: parseFloat(weightValue),
-          unit: weightUnit
-        };
-      }
-
-      const updated = await Banner.findByIdAndUpdate(req.params.id, updates, { new: true });
-      if (!updated) {
-        return res.status(404).json({ message: 'Banner not found' });
-      }
-
-      console.log('✅ Product banner updated');
-      return res.json(updated);
-    }
-
-    // Handle regular banner updates
-    upload.single('image')(req, res, async (uploadErr) => {
-      try {
-        const updates = {
-          type,
-          title: req.body.title || '',
+      // Handle product-based banner updates
+      if (type === 'product-type' || type === 'side') {
+        updates = {
+          ...updates,
+          productId,
+          selectedVariantIndex: parseInt(selectedVariantIndex) || 0,
+          imageUrl: productImageUrl || '',
+          price: parseFloat(price) || 0,
+          oldPrice: parseFloat(oldPrice) || 0,
+          discountPercent: parseFloat(discountPercent) || 0,
         };
 
+        if (weightValue && weightUnit) {
+          updates.weight = {
+            value: parseFloat(weightValue),
+            unit: weightUnit
+          };
+        }
+      } else {
+        // Handle regular banner updates
         if (req.file) {
           updates.imageUrl = `/${uploadDir}/${req.file.filename}`;
           if (req.body.hash) {
             updates.hash = req.body.hash;
           }
         }
+      }
 
+      try {
         const updated = await Banner.findByIdAndUpdate(req.params.id, updates, { new: true });
         if (!updated) {
           return res.status(404).json({ message: 'Banner not found' });
         }
 
-        console.log('✅ Regular banner updated');
+        console.log('✅ Banner updated successfully');
         res.json(updated);
-
       } catch (updateError) {
-        console.log('❌ Update error:', updateError);
+        console.log('❌ Update save error:', updateError);
         res.status(500).json({ 
           message: 'Update failed', 
           error: updateError.message 

@@ -1,45 +1,18 @@
 import mongoose from 'mongoose';
 
 const bannerSchema = new mongoose.Schema({
-  type: { 
-    type: String, 
-    required: true,
-    enum: ['slider', 'side', 'offer', 'product-type']
-  },
-  imageUrl: { 
-    type: String,
-    required: true
-  },
-  hash: { 
-    type: String 
-  }, // Only for uploaded images
-  title: { 
-    type: String,
-    default: ''
-  },
-  price: {
-    type: Number,
-    default: 0
-  },
-  oldPrice: {
-    type: Number,
-    default: 0
-  },
-  discountPercent: {
-    type: Number,
-    default: 0
-  },
+  type: { type: String, required: true },
+  imageUrl: { type: String },
+  hash: { type: String }, // Only for uploaded images, not product-based banners
+  title: { type: String },
+  price: Number,
+  oldPrice: Number,
+  discountPercent: Number,
   weight: {
-    value: {
-      type: Number,
-      default: 0
-    },
-    unit: {
-      type: String,
-      default: 'g'
-    }
+    value: Number,
+    unit: String
   },
-  // Product-based banner fields
+  // New fields for product-based banners
   productId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Product'
@@ -48,12 +21,6 @@ const bannerSchema = new mongoose.Schema({
     type: Number,
     default: 0
   }
-}, { 
-  timestamps: true 
-});
-
-// Add indexes for better performance
-bannerSchema.index({ type: 1 });
-bannerSchema.index({ type: 1, hash: 1 });
+}, { timestamps: true });
 
 export default mongoose.model('Banner', bannerSchema);
