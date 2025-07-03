@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: mirakle-server
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
