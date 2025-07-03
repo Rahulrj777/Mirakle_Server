@@ -1,9 +1,10 @@
-// Add these fields to your Banner schema
+import mongoose from 'mongoose';
+
 const bannerSchema = new mongoose.Schema({
   type: { type: String, required: true },
   imageUrl: { type: String },
-  hash: { type: String },
-  title: { type: String }, // This will be auto-populated from selected product
+  hash: { type: String }, // Only for uploaded images, not product-based banners
+  title: { type: String },
   price: Number,
   oldPrice: Number,
   discountPercent: Number,
@@ -11,7 +12,7 @@ const bannerSchema = new mongoose.Schema({
     value: Number,
     unit: String
   },
-  // New fields for product selection
+  // New fields for product-based banners
   productId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Product'
@@ -21,3 +22,5 @@ const bannerSchema = new mongoose.Schema({
     default: 0
   }
 }, { timestamps: true });
+
+export default mongoose.model('Banner', bannerSchema);
