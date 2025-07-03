@@ -1,4 +1,3 @@
-// Make sure this is your MAIN server file (not server-debug.js)
 import express from "express"
 import mongoose from "mongoose"
 import dotenv from "dotenv"
@@ -13,14 +12,12 @@ const app = express()
 
 const allowedOrigins = ["https://mirakle-admin.vercel.app", "https://mirakle-client.vercel.app"]
 
-// Request logging
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`)
   console.log("Origin:", req.headers.origin)
   next()
 })
 
-// CORS configuration
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -39,17 +36,11 @@ app.use(
 
 app.use(express.json({ limit: "50mb" }))
 app.use(express.urlencoded({ extended: true, limit: "50mb" }))
-
 app.use("/uploads", express.static("uploads"))
 
-// Test route
 app.get("/api/test", (req, res) => {
   console.log("✅ Test endpoint hit")
-  res.json({
-    message: "Server is working",
-    timestamp: new Date().toISOString(),
-    env: process.env.NODE_ENV,
-  })
+  res.json({ message: "Server is working", timestamp: new Date().toISOString() })
 })
 
 // Register routes
@@ -64,13 +55,9 @@ app.get("/", (req, res) => {
   res.send("Mirakle Server is Running")
 })
 
-// Error handling middleware
 app.use((err, req, res, next) => {
   console.error("❌ Server Error:", err)
-  res.status(500).json({
-    message: "Server error",
-    error: process.env.NODE_ENV === "development" ? err.message : "Internal server error",
-  })
+  res.status(500).json({ message: "Server error", error: err.message })
 })
 
 mongoose

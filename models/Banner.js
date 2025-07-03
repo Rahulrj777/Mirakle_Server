@@ -2,18 +2,11 @@ import mongoose from "mongoose"
 
 const bannerSchema = new mongoose.Schema(
   {
-    type: { 
-      type: String, 
-      required: true,
-      enum: ['slider', 'side', 'offer', 'product-type']
-    },
+    type: { type: String, required: true },
     imageUrl: { type: String },
-    hash: { type: String }, // Remove unique constraint from here
+    hash: { type: String }, // No unique constraint here
     title: { type: String },
-    productId: { 
-      type: mongoose.Schema.Types.ObjectId, 
-      ref: "Product" 
-    },
+    productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
     selectedVariantIndex: { type: Number, default: 0 },
     price: { type: Number },
     oldPrice: { type: Number },
@@ -28,14 +21,13 @@ const bannerSchema = new mongoose.Schema(
   },
 )
 
-// Create a CONDITIONAL unique index
-// Only apply unique constraint to regular banners (with hash)
+// Only add unique constraint for regular banners (not product banners)
 bannerSchema.index(
-  { hash: 1, type: 1 }, 
-  { 
+  { hash: 1, type: 1 },
+  {
     unique: true,
-    partialFilterExpression: { hash: { $ne: null } } // Only apply when hash is not null
-  }
+    partialFilterExpression: { hash: { $ne: null } }, // Only apply when hash is not null
+  },
 )
 
 const Banner = mongoose.model("Banner", bannerSchema)
