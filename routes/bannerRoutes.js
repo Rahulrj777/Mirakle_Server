@@ -3,12 +3,15 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import Banner from '../models/Banner.js';
+import Product from '../models/Product.js';
 
 const router = express.Router();
 
+// === Setup Upload Directory ===
 const uploadDir = 'uploads';
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
+// === Multer Storage Config ===
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
@@ -17,18 +20,16 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 /**
- * Middleware to handle single file upload from either 'image' or 'bannerImage'
+ * Middleware to handle either 'image' or 'bannerImage' fields
  */
-const handleImageUpload = (req, res, next) => {
-  const singleUpload = upload.single('image');
-
-  singleUpload(req, res, function (err) {
+const uploadMiddleware = (req, res, next) => {
+  const imageUpload = upload.single('image');
+  imageUpload(req, res, function (err) {
     if (err || !req.file) {
-      // Try 'bannerImage' key
-      const fallbackUpload = upload.single('bannerImage');
-      fallbackUpload(req, res, function (err2) {
+      const fallback = upload.single('bannerImage');
+      fallback(req, res, function (err2) {
         if (err2 || !req.file) {
-          return res.status(400).json({ message: 'File upload failed. Please use "image" or "bannerImage".' });
+          return res.status(400).json({ message: 'File upload failed. Use "image" or "bannerImage"' });
         }
         next();
       });
@@ -38,16 +39,15 @@ const handleImageUpload = (req, res, next) => {
   });
 };
 
-// POST /upload
-// routes/bannerRoutes.js
-
+// === POST: Upload Banner ===
 router.post('/upload', uploadMiddleware, async (req, res) => {
   try {
     const { type, hash, title, price, oldPrice, discountPercent, weightValue, weightUnit, productIds } = req.body;
 
     const bannerData = { type };
-    if (type === 'most-selling' || type === 'product-type') {
-      bannerData.products = JSON.parse(productIds || '[]');
+
+    if (type === 'top-selling' || type === 'product-type') {
+      bannerData.productIds = JSON.parse(productIds || '[]');
     } else {
       if (!req.file || !hash) throw new Error('Missing image or hash');
       bannerData.hash = hash;
@@ -63,33 +63,14 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
 
     const banner = new Banner(bannerData);
     await banner.save();
-    return res.status(201).json(banner);
+    res.status(201).json(banner);
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message });
   }
 });
 
-router.put('/:id', upload.single('image'), async (req, res) => {
-  try {
-    const { type, title, price, oldPrice, discountPercent, weightValue, weightUnit, productIds } = req.body;
-    const updates = {};
-    if (type === 'most-selling' || type === 'product-type') {
-      updates.products = JSON.parse(productIds || '[]');
-    }
-    if (req.file) updates.imageUrl = `/${uploadDir}/${req.file.filename}`;
-    // other updates...
-    
-    const updated = await Banner.findByIdAndUpdate(req.params.id, updates, { new: true });
-    if (!updated) return res.status(404).json({ message: 'Not found' });
-    return res.json(updated);
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: err.message });
-  }
-});
-
-// PUT /:id
+// === PUT: Update Existing Banner ===
 router.put('/:id', upload.single('image'), async (req, res) => {
   try {
     const {
@@ -100,6 +81,7 @@ router.put('/:id', upload.single('image'), async (req, res) => {
       discountPercent,
       weightValue,
       weightUnit,
+      productIds
     } = req.body;
 
     const updates = {};
@@ -111,7 +93,9 @@ router.put('/:id', upload.single('image'), async (req, res) => {
     if (weightValue && weightUnit) {
       updates.weight = { value: parseFloat(weightValue), unit: weightUnit };
     }
-
+    if (productIds) {
+      updates.productIds = JSON.parse(productIds);
+    }
     if (req.file) {
       updates.imageUrl = `/${uploadDir}/${req.file.filename}`;
     }
@@ -125,24 +109,29 @@ router.put('/:id', upload.single('image'), async (req, res) => {
   }
 });
 
-// GET /
+// === GET: Fetch Banners ===
 router.get('/', async (req, res) => {
   try {
-    const banners = await Banner.find();
+    const { type } = req.query;
+    const query = type ? { type } : {};
+
+    const banners = await Banner.find(query).populate('productIds', 'title images'); // fetch product title/images
     res.json(banners);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// DELETE /:id
+// === DELETE: Remove Banner ===
 router.delete('/:id', async (req, res) => {
   try {
     const banner = await Banner.findByIdAndDelete(req.params.id);
     if (!banner) return res.status(404).json({ message: 'Banner not found' });
 
-    const filePath = path.join('uploads', path.basename(banner.imageUrl));
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    if (banner.imageUrl) {
+      const filePath = path.join('uploads', path.basename(banner.imageUrl));
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
 
     res.json({ message: 'Deleted' });
   } catch (err) {
