@@ -1,9 +1,18 @@
 import express from "express"
 import cors from "cors"
+import bannerRoutes from "./simple-banner-routes.js"
 
 const app = express()
 
-// Enable CORS for your admin panel
+// Request logging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`)
+  console.log("Origin:", req.headers.origin)
+  console.log("User-Agent:", req.headers["user-agent"])
+  next()
+})
+
+// CORS
 app.use(
   cors({
     origin: ["https://mirakle-admin.vercel.app", "http://localhost:3000"],
@@ -11,56 +20,70 @@ app.use(
   }),
 )
 
-app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
+app.use(express.json({ limit: "50mb" }))
+app.use(express.urlencoded({ extended: true, limit: "50mb" }))
 
-// Test routes
+// Root route
 app.get("/", (req, res) => {
   console.log("✅ Root endpoint hit")
-  res.json({ message: "Test server is running", timestamp: new Date().toISOString() })
+  res.json({
+    message: "Working server is running",
+    timestamp: new Date().toISOString(),
+    availableRoutes: [
+      "GET /",
+      "GET /api/test",
+      "GET /api/banners",
+      "GET /api/banners/test",
+      "POST /api/banners/upload",
+    ],
+  })
 })
 
+// API test route
 app.get("/api/test", (req, res) => {
   console.log("✅ API test endpoint hit")
-  res.json({ message: "API is working", timestamp: new Date().toISOString() })
+  res.json({ message: "API working", timestamp: new Date().toISOString() })
 })
 
-// Banner test routes
-app.get("/api/banners/test", (req, res) => {
-  console.log("✅ Banner test endpoint hit")
-  res.json({ message: "Banner routes are working!", timestamp: new Date().toISOString() })
-})
+// Register banner routes
+console.log("🔧 Registering banner routes...")
+app.use("/api/banners", bannerRoutes)
+console.log("✅ Banner routes registered")
 
-app.get("/api/banners", (req, res) => {
-  console.log("✅ Get banners endpoint hit")
-  res.json({ message: "Get banners working", banners: [] })
-})
-
-app.post("/api/banners/upload", (req, res) => {
-  console.log("✅ Upload endpoint hit")
-  console.log("Body:", req.body)
-  console.log("Headers:", req.headers)
-  res.json({ message: "Upload endpoint working", received: Object.keys(req.body) })
-})
-
-// Catch all other routes
+// 404 handler
 app.use("*", (req, res) => {
   console.log(`❌ Route not found: ${req.method} ${req.originalUrl}`)
   res.status(404).json({
     message: "Route not found",
     method: req.method,
     url: req.originalUrl,
+    availableRoutes: [
+      "GET /",
+      "GET /api/test",
+      "GET /api/banners",
+      "GET /api/banners/test",
+      "POST /api/banners/upload",
+    ],
+  })
+})
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error("❌ Server Error:", err)
+  res.status(500).json({
+    message: "Server error",
+    error: err.message,
     timestamp: new Date().toISOString(),
   })
 })
 
 const PORT = process.env.PORT || 7000
 app.listen(PORT, () => {
-  console.log(`🚀 Test server running on port ${PORT}`)
-  console.log(`📍 Test URLs:`)
+  console.log(`🚀 Working server running on port ${PORT}`)
+  console.log("📍 Available endpoints:")
   console.log(`   Root: http://localhost:${PORT}/`)
   console.log(`   API Test: http://localhost:${PORT}/api/test`)
   console.log(`   Banner Test: http://localhost:${PORT}/api/banners/test`)
   console.log(`   Get Banners: http://localhost:${PORT}/api/banners`)
-  console.log(`   Upload Test: http://localhost:${PORT}/api/banners/upload`)
+  console.log(`   Upload: http://localhost:${PORT}/api/banners/upload`)
 })
