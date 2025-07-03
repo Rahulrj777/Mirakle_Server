@@ -1,3 +1,4 @@
+// Save this as EXACTLY "bannerRoutes.js" (not bannerRoutes-final.js)
 import express from "express"
 import multer from "multer"
 import fs from "fs"
@@ -38,7 +39,7 @@ router.use((req, res, next) => {
   next()
 })
 
-// Test route - CRITICAL for debugging
+// Test route
 router.get("/test", (req, res) => {
   console.log("✅ Banner test route working")
   res.json({
@@ -49,14 +50,13 @@ router.get("/test", (req, res) => {
   })
 })
 
-// GET all banners - SIMPLIFIED
+// GET all banners
 router.get("/", async (req, res) => {
   console.log("🔥 GET BANNERS")
 
   try {
     const banners = await Banner.find().populate("productId", "title images variants")
     console.log(`✅ Found ${banners.length} banners`)
-
     res.json(banners)
   } catch (error) {
     console.error("❌ GET banners error:", error)
@@ -123,9 +123,12 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       console.log("🛍️ Processing product-based banner")
 
       if (!productId) {
+        console.log("❌ No productId provided")
         if (req.file) fs.unlinkSync(req.file.path)
         return res.status(400).json({ message: "Product ID is required for product-based banners" })
       }
+
+      console.log("✅ ProductId:", productId)
 
       bannerData = {
         ...bannerData,
@@ -202,7 +205,6 @@ router.put("/:id", upload.single("image"), async (req, res) => {
   console.log("🔥 UPDATE START")
   console.log("📝 Banner ID:", req.params.id)
   console.log("📝 Body:", req.body)
-  console.log("📁 File:", req.file ? "Present" : "Missing")
 
   try {
     const {

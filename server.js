@@ -1,4 +1,4 @@
-// Make sure your main server file (server.js or index.js) looks like this
+// Make sure this is your MAIN server file (not server-debug.js)
 import express from "express"
 import mongoose from "mongoose"
 import dotenv from "dotenv"
@@ -13,7 +13,14 @@ const app = express()
 
 const allowedOrigins = ["https://mirakle-admin.vercel.app", "https://mirakle-client.vercel.app"]
 
-// Enhanced CORS
+// Request logging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`)
+  console.log("Origin:", req.headers.origin)
+  next()
+})
+
+// CORS configuration
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -27,26 +34,13 @@ app.use(
       }
     },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   }),
 )
-
-// Handle preflight requests
-app.options("*", cors())
 
 app.use(express.json({ limit: "50mb" }))
 app.use(express.urlencoded({ extended: true, limit: "50mb" }))
 
-// Static files
 app.use("/uploads", express.static("uploads"))
-
-// Request logging
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`)
-  console.log("Origin:", req.headers.origin)
-  next()
-})
 
 // Test route
 app.get("/api/test", (req, res) => {
@@ -65,7 +59,6 @@ app.use("/api/banners", bannerRoutes) // Make sure this matches the import
 app.use("/api", userRoutes)
 console.log("✅ Routes registered")
 
-// Root route
 app.get("/", (req, res) => {
   console.log("✅ Root endpoint hit")
   res.send("Mirakle Server is Running")
@@ -80,14 +73,10 @@ app.use((err, req, res, next) => {
   })
 })
 
-// Database connection
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => {
-    console.error("❌ MongoDB connection error:", err)
-    process.exit(1)
-  })
+  .catch((err) => console.error("❌ MongoDB connection error:", err))
 
 const PORT = process.env.PORT || 7000
 app.listen(PORT, () => {
