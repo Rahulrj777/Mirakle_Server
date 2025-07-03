@@ -50,6 +50,38 @@ router.get("/", async (req, res) => {
   }
 })
 
+router.put("/:id", upload.single("image"), async (req, res) => {
+  try {
+    const banner = await Banner.findById(req.params.id)
+    if (!banner) return res.status(404).json({ message: "Banner not found" })
+
+    // Allow updating productId, variantIndex, title, etc.
+    banner.type = req.body.type || banner.type
+    banner.title = req.body.title || banner.title
+    banner.productId = req.body.productId || banner.productId
+    banner.selectedVariantIndex = Number.parseInt(req.body.selectedVariantIndex || banner.selectedVariantIndex)
+    banner.price = Number.parseFloat(req.body.price) || banner.price
+    banner.oldPrice = Number.parseFloat(req.body.oldPrice) || banner.oldPrice
+    banner.discountPercent = Number.parseFloat(req.body.discountPercent) || banner.discountPercent
+    banner.weight = {
+      value: Number.parseFloat(req.body.weightValue),
+      unit: req.body.weightUnit,
+    }
+
+    // Update productImageUrl if exists
+    if (req.body.productImageUrl) {
+      banner.imageUrl = req.body.productImageUrl
+    }
+
+    await banner.save()
+    res.status(200).json(banner)
+  } catch (error) {
+    console.error("❌ PUT error:", error)
+    res.status(500).json({ message: "Update failed", error: error.message })
+  }
+})
+
+
 // POST upload - SIMPLIFIED (no duplicate checking)
 router.post("/upload", (req, res) => {
   upload.single("image")(req, res, async (err) => {
