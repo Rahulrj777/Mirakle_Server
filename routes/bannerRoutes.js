@@ -6,11 +6,14 @@ import Banner from "../models/Banner.js"
 
 const router = express.Router()
 
+// Ensure upload directory exists
 const uploadDir = "uploads"
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true })
+  console.log("✅ Created uploads directory")
 }
 
+// Multer configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
@@ -18,12 +21,19 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true)
+    } else {
+      cb(new Error("Only image files are allowed"), false)
+    }
+  },
 })
 
 // Debug middleware
 router.use((req, res, next) => {
-  console.log(`🔥 BANNER: ${req.method} ${req.originalUrl}`)
+  console.log(`🔥 BANNER ROUTE: ${req.method} ${req.originalUrl}`)
   console.log("🔥 Content-Type:", req.headers["content-type"])
   next()
 })
@@ -34,13 +44,14 @@ router.get("/test", (req, res) => {
   res.json({
     message: "Banner routes working!",
     timestamp: new Date().toISOString(),
+    uploadDir: uploadDir,
+    uploadsExists: fs.existsSync(uploadDir),
   })
 })
 
 // GET all banners
 router.get("/", async (req, res) => {
   console.log("🔥 GET BANNERS")
-
   try {
     const banners = await Banner.find().populate("productId", "title images variants")
     console.log(`✅ Found ${banners.length} banners`)
@@ -54,26 +65,26 @@ router.get("/", async (req, res) => {
   }
 })
 
-// POST upload - FIXED LOGIC
+// POST upload with comprehensive error handling
 router.post("/upload", (req, res) => {
   console.log("🔥 UPLOAD START")
   console.log("📝 Headers:", req.headers)
 
-  // Check if this is a product-based banner first
+  // Check content type
   const isMultipart = req.headers["content-type"]?.includes("multipart/form-data")
-
   if (!isMultipart) {
-    return res.status(400).json({ message: "Invalid content type" })
+    console.log("❌ Invalid content type")
+    return res.status(400).json({ message: "Invalid content type. Expected multipart/form-data" })
   }
 
-  // Use multer to parse the form data
+  // Use multer to parse form data
   upload.single("image")(req, res, async (err) => {
     if (err) {
-      console.log("❌ Multer error:", err)
+      console.log("❌ Multer error:", err.message)
       return res.status(400).json({ message: `Upload error: ${err.message}` })
     }
 
-    console.log("✅ Multer processed")
+    console.log("✅ Multer processed successfully")
     console.log("📝 Body:", req.body)
     console.log("📁 File:", req.file ? "Present" : "Not present")
 
@@ -92,6 +103,7 @@ router.post("/upload", (req, res) => {
         productImageUrl,
       } = req.body
 
+      // Validate required fields
       if (!type) {
         if (req.file) fs.unlinkSync(req.file.path)
         return res.status(400).json({ message: "Banner type is required" })
@@ -99,7 +111,7 @@ router.post("/upload", (req, res) => {
 
       console.log("✅ Type:", type)
 
-      // Check limits
+      // Check type limits
       const typeLimits = {
         slider: 5,
         side: 3,
@@ -121,7 +133,7 @@ router.post("/upload", (req, res) => {
         title: title || "",
       }
 
-      // Handle product-based banners (NO IMAGE FILE REQUIRED)
+      // Handle product-based banners
       if (type === "product-type" || type === "side") {
         console.log("🛍️ Processing product-based banner")
 
@@ -130,7 +142,7 @@ router.post("/upload", (req, res) => {
           return res.status(400).json({ message: "Product ID is required for product-based banners" })
         }
 
-        // Clean up any uploaded file since we don't need it for product banners
+        // Clean up uploaded file (not needed for product banners)
         if (req.file) {
           fs.unlinkSync(req.file.path)
           console.log("🗑️ Cleaned up unnecessary file for product banner")
@@ -155,7 +167,7 @@ router.post("/upload", (req, res) => {
 
         console.log("💾 Product banner data:", bannerData)
       } else {
-        // Handle regular banners (IMAGE FILE REQUIRED)
+        // Handle regular banners (require image file)
         console.log("🖼️ Processing regular banner")
 
         if (!req.file) {
@@ -184,104 +196,33 @@ router.post("/upload", (req, res) => {
       }
 
       // Save to database
+      console.log("💾 Saving banner to database...")
       const banner = new Banner(bannerData)
-      await banner.save()
+      const savedBanner = await banner.save()
 
-      console.log("✅ Banner saved successfully")
-      res.status(201).json(banner)
+      console.log("✅ Banner saved successfully:", savedBanner._id)
+      res.status(201).json(savedBanner)
     } catch (error) {
       console.error("❌ Upload error:", error)
+
+      // Clean up file if error occurs
       if (req.file && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path)
+        console.log("🗑️ Cleaned up file after error")
       }
+
+      // Handle specific MongoDB errors
+      if (error.code === 11000) {
+        return res.status(409).json({ message: "Duplicate entry detected" })
+      }
+
       res.status(500).json({
-        message: "Server error",
+        message: "Server error during upload",
         error: error.message,
       })
     }
 
     console.log("🔥 UPLOAD END")
-  })
-})
-
-// PUT update banner
-router.put("/:id", (req, res) => {
-  console.log("🔥 UPDATE START")
-  console.log("📝 Banner ID:", req.params.id)
-
-  upload.single("image")(req, res, async (err) => {
-    if (err) {
-      console.log("❌ Update multer error:", err)
-      return res.status(400).json({ message: `Update error: ${err.message}` })
-    }
-
-    try {
-      const {
-        type,
-        title,
-        price,
-        weightValue,
-        weightUnit,
-        oldPrice,
-        discountPercent,
-        productId,
-        selectedVariantIndex,
-        productImageUrl,
-      } = req.body
-
-      const banner = await Banner.findById(req.params.id)
-      if (!banner) {
-        return res.status(404).json({ message: "Banner not found" })
-      }
-
-      // Update basic fields
-      banner.type = type || banner.type
-      banner.title = title || banner.title
-
-      // Handle product-based banner updates
-      if (type === "product-type" || type === "side") {
-        if (productId) banner.productId = productId
-        if (selectedVariantIndex !== undefined) banner.selectedVariantIndex = Number.parseInt(selectedVariantIndex)
-        if (productImageUrl) banner.imageUrl = productImageUrl
-        if (price) banner.price = Number.parseFloat(price)
-        if (oldPrice) banner.oldPrice = Number.parseFloat(oldPrice)
-        if (discountPercent) banner.discountPercent = Number.parseFloat(discountPercent)
-
-        if (weightValue && weightUnit) {
-          banner.weight = {
-            value: Number.parseFloat(weightValue),
-            unit: weightUnit,
-          }
-        }
-
-        // Clean up any uploaded file since we don't need it for product banners
-        if (req.file) {
-          fs.unlinkSync(req.file.path)
-          console.log("🗑️ Cleaned up unnecessary file for product banner update")
-        }
-      } else {
-        // Handle regular banner updates with potential new image
-        if (req.file) {
-          banner.imageUrl = `/${uploadDir}/${req.file.filename}`
-          if (req.body.hash) {
-            banner.hash = req.body.hash
-          }
-        }
-      }
-
-      await banner.save()
-
-      console.log("✅ Banner updated successfully")
-      res.json({ message: "Banner updated successfully", banner })
-    } catch (error) {
-      console.error("❌ Update error:", error)
-      res.status(500).json({
-        message: "Server error",
-        error: error.message,
-      })
-    }
-
-    console.log("🔥 UPDATE END")
   })
 })
 
@@ -295,7 +236,7 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ message: "Banner not found" })
     }
 
-    // Delete file if it's not a product-based banner
+    // Delete associated file
     if (banner.type !== "product-type" && banner.type !== "side" && banner.imageUrl) {
       const filePath = path.join(uploadDir, path.basename(banner.imageUrl))
       if (fs.existsSync(filePath)) {

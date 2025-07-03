@@ -4,7 +4,7 @@ const bannerSchema = new mongoose.Schema(
   {
     type: { type: String, required: true },
     imageUrl: { type: String },
-    hash: { type: String }, // No unique constraint here
+    hash: { type: String },
     title: { type: String },
     productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
     selectedVariantIndex: { type: Number, default: 0 },
@@ -21,12 +21,13 @@ const bannerSchema = new mongoose.Schema(
   },
 )
 
-// Only add unique constraint for regular banners (not product banners)
+// Create a compound index for hash and type, but only when hash exists
 bannerSchema.index(
   { hash: 1, type: 1 },
   {
     unique: true,
-    partialFilterExpression: { hash: { $ne: null } }, // Only apply when hash is not null
+    sparse: true, // Only create index when hash field exists
+    partialFilterExpression: { hash: { $exists: true, $ne: null } },
   },
 )
 
