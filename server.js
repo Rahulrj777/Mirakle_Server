@@ -1,9 +1,9 @@
-// Add this to your main server file to debug route registration
+// Make sure your main server file (server.js or index.js) looks like this
 import express from "express"
 import mongoose from "mongoose"
 import dotenv from "dotenv"
 import cors from "cors"
-import bannerRoutes from "./routes/bannerRoutes.js" // Make sure this path is correct
+import bannerRoutes from "./routes/bannerRoutes.js" // EXACT filename match
 import productRoutes from "./routes/productRoutes.js"
 import userRoutes from "./routes/userRoutes.js"
 
@@ -13,11 +13,11 @@ const app = express()
 
 const allowedOrigins = ["https://mirakle-admin.vercel.app", "https://mirakle-client.vercel.app"]
 
-// CORS configuration
+// Enhanced CORS
 app.use(
   cors({
     origin: (origin, callback) => {
-      console.log("🔍 CORS check for origin:", origin)
+      console.log("CORS check for origin:", origin)
       if (!origin || allowedOrigins.includes(origin)) {
         console.log("✅ CORS allowed")
         callback(null, true)
@@ -27,8 +27,13 @@ app.use(
       }
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   }),
 )
+
+// Handle preflight requests
+app.options("*", cors())
 
 app.use(express.json({ limit: "50mb" }))
 app.use(express.urlencoded({ extended: true, limit: "50mb" }))
@@ -36,16 +41,16 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }))
 // Static files
 app.use("/uploads", express.static("uploads"))
 
-// Debug middleware to log all requests
+// Request logging
 app.use((req, res, next) => {
-  console.log(`🌐 ${new Date().toISOString()} - ${req.method} ${req.url}`)
-  console.log("🌐 Origin:", req.headers.origin)
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`)
+  console.log("Origin:", req.headers.origin)
   next()
 })
 
 // Test route
 app.get("/api/test", (req, res) => {
-  console.log("✅ Main test endpoint hit")
+  console.log("✅ Test endpoint hit")
   res.json({
     message: "Server is working",
     timestamp: new Date().toISOString(),
@@ -56,9 +61,8 @@ app.get("/api/test", (req, res) => {
 // Register routes
 console.log("🔧 Registering routes...")
 app.use("/api/products", productRoutes)
-app.use("/api/banners", bannerRoutes) // Make sure this line exists
+app.use("/api/banners", bannerRoutes) // Make sure this matches the import
 app.use("/api", userRoutes)
-
 console.log("✅ Routes registered")
 
 // Root route
@@ -80,10 +84,13 @@ app.use((err, req, res, next) => {
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => console.error("❌ MongoDB connection error:", err))
+  .catch((err) => {
+    console.error("❌ MongoDB connection error:", err)
+    process.exit(1)
+  })
 
 const PORT = process.env.PORT || 7000
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`)
-  console.log("✅ Allowed origins:", allowedOrigins)
+  console.log("Allowed origins:", allowedOrigins)
 })
