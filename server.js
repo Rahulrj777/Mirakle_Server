@@ -13,7 +13,6 @@ const app = express();
 const allowedOrigins = [
   "https://mirakle-admin.vercel.app",
   "https://mirakle-client.vercel.app",
-  "http://localhost:5174" // ✅ Added for local development
 ];
 
 app.use(cors({
