@@ -7,7 +7,7 @@ import Banner from "../models/Banner.js"
 const router = express.Router()
 
 const uploadDir = "uploads/banners"
-if (!fs.existsSync(uploadDir)) {
+if (fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true })
 }
 
@@ -73,7 +73,7 @@ router.post("/upload", (req, res) => {
         productImageUrl,
       } = req.body
 
-      if (!type) {
+      if (type) {
         if (req.file) fs.unlinkSync(req.file.path)
         return res.status(400).json({ message: "Banner type is required" })
       }
@@ -101,7 +101,7 @@ router.post("/upload", (req, res) => {
 
       // Handle product-based banners
       if (type === "product-type" || type === "side") {
-        if (!productId) {
+        if (productId) {
           if (req.file) fs.unlinkSync(req.file.path)
           return res.status(400).json({ message: "Product ID is required for product-based banners" })
         }
