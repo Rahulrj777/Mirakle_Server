@@ -15,7 +15,7 @@ const allowedOrigins = [
   "https://mirakle-client.vercel.app",
 ];
 
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
@@ -24,8 +24,10 @@ app.use(cors({
     }
   },
   credentials: true,
-}));
+};
 
+app.options('*', cors(corsOptions)); // ✅ Handle preflight requests
+app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use('/uploads', express.static('uploads')); 
