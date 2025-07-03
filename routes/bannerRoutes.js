@@ -6,7 +6,7 @@ import Banner from "../models/Banner.js"
 
 const router = express.Router()
 
-const uploadDir = "uploads"
+const uploadDir = "uploads/banners"
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true })
 }
