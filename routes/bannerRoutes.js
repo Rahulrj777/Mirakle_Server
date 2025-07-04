@@ -115,7 +115,7 @@ router.post("/upload", (req, res) => {
         const existingProductBanner = await Banner.findOne({
           type,
           productId,
-          selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
+          // selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
         })
 
         if (existingProductBanner) {
@@ -192,7 +192,6 @@ router.delete("/:id", async (req, res) => {
         fs.unlinkSync(filePath)
       }
     }
-
     res.json({ message: "Banner deleted successfully" })
   } catch (error) {
     console.error("❌ Delete error:", error)
