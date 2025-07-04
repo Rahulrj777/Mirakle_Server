@@ -1,3 +1,12 @@
+import mongoose from 'mongoose';
+
+const variantSchema = new mongoose.Schema({
+  size: { type: String, required: true },
+  price: { type: Number, required: true },
+  stock: { type: Number, default: 0 },
+  discountPercent: { type: Number, default: 0 },
+}, { _id: false });
+
 const productSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
@@ -10,7 +19,7 @@ const productSchema = new mongoose.Schema(
 
     variants: [variantSchema],
 
-    discountPercent: { type: Number, default: 0 },
+    discountPercent: { type: Number, default: 0 }, // Global discount
 
     oldPrice: { type: Number, default: 0 },
 
@@ -23,14 +32,14 @@ const productSchema = new mongoose.Schema(
 
     details: { type: mongoose.Schema.Types.Mixed, default: {} },
 
-    status: { type: String, enum: ['active', 'inactive'], default: 'active' },
-
-    keywords: { type: [String], default: [] },
+    status: { type: String, enum: ['active', 'inactive'], default: 'active' }, // ✅ Useful for admin filtering
   },
   {
     timestamps: true,
   }
 );
 
-// ✅ Add text index here
-productSchema.index({ title: 'text', keywords: 'text' });
+productSchema.index({ title: 1 }); // ✅ Index for faster search by title
+
+const Product = mongoose.model('Product', productSchema);
+export default Product;
