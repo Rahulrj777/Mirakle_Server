@@ -6,7 +6,7 @@ import Banner from "../models/Banner.js"
 
 const router = express.Router()
 
-const uploadDir = "uploads/banners"
+const uploadDir = "uploads"
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true })
 }
@@ -50,7 +50,7 @@ router.get("/", async (req, res) => {
   }
 })
 
-// POST upload - FINAL VERSION (cleaned and clarified)
+// POST upload - SIMPLIFIED (no duplicate checking)
 router.post("/upload", (req, res) => {
   upload.single("image")(req, res, async (err) => {
     if (err) {
@@ -78,7 +78,7 @@ router.post("/upload", (req, res) => {
         return res.status(400).json({ message: "Banner type is required" })
       }
 
-      // 1️⃣ Type limits (slider max 5, side max 3, etc.)
+      // Check type limits
       const typeLimits = {
         slider: 5,
         side: 3,
@@ -94,27 +94,31 @@ router.post("/upload", (req, res) => {
         return res.status(400).json({ message: `Only ${maxLimit} banners allowed for ${type}` })
       }
 
-      let bannerData = { type, title: title || "" }
+      let bannerData = {
+        type,
+        title: title || "",
+      }
 
-      // 2️⃣ Product-based banner logic
+      // Handle product-based banners
       if (type === "product-type" || type === "side") {
         if (!productId) {
           if (req.file) fs.unlinkSync(req.file.path)
-          return res.status(400).json({ message: "Product ID is required for this banner type" })
+          return res.status(400).json({ message: "Product ID is required for product-based banners" })
         }
 
-        if (req.file) fs.unlinkSync(req.file.path) // not used for product banners
+        // Clean up uploaded file (not needed for product banners)
+        if (req.file) {
+          fs.unlinkSync(req.file.path)
+        }
 
-        const variantIndex = Number.parseInt(selectedVariantIndex) || 0
-
-        // Prevent same product for same type
-        const alreadyExists = await Banner.findOne({
+        // Check for existing product banner (manual duplicate check)
+        const existingProductBanner = await Banner.findOne({
           type,
           productId,
-          selectedVariantIndex: variantIndex,
+          selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
         })
 
-        if (alreadyExists) {
+        if (existingProductBanner) {
           return res.status(409).json({
             message: "This product variant is already added as a banner of this type",
           })
@@ -123,51 +127,93 @@ router.post("/upload", (req, res) => {
         bannerData = {
           ...bannerData,
           productId,
-          selectedVariantIndex: variantIndex,
+          selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
           imageUrl: productImageUrl || "",
-          price: Number(price) || 0,
-          oldPrice: Number(oldPrice) || 0,
-          discountPercent: Number(discountPercent) || 0,
+          price: Number.parseFloat(price) || 0,
+          oldPrice: Number.parseFloat(oldPrice) || 0,
+          discountPercent: Number.parseFloat(discountPercent) || 0,
         }
 
         if (weightValue && weightUnit) {
           bannerData.weight = {
-            value: Number(weightValue),
+            value: Number.parseFloat(weightValue),
             unit: weightUnit,
           }
         }
       } else {
-        // 3️⃣ Regular image-based banners
+        // Handle regular banners (require image file)
         if (!req.file) {
           return res.status(400).json({ message: "Image file is required for this banner type" })
         }
 
+        // SIMPLIFIED: No hash duplicate checking, just save
         bannerData = {
           ...bannerData,
           imageUrl: `/${uploadDir}/${req.file.filename}`,
-          hash: hash || null, // don't check uniqueness
+          hash: hash || null, // Allow hash to be null
         }
       }
 
-      // ✅ Save banner
-      const newBanner = new Banner(bannerData)
-      const saved = await newBanner.save()
+      // Save to database - NO duplicate checking
+      const banner = new Banner(bannerData)
+      const savedBanner = await banner.save()
 
-      console.log("✅ Banner saved")
-      res.status(201).json(saved)
+      console.log("✅ Banner saved successfully")
+      res.status(201).json(savedBanner)
     } catch (error) {
       console.error("❌ Upload error:", error)
 
+      // Clean up file if error occurs
       if (req.file && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path)
       }
 
+      // Handle any MongoDB errors gracefully
       res.status(500).json({
         message: "Server error during upload",
         error: error.message,
       })
     }
   })
+})
+
+// DELETE all banners or by specific type
+router.delete("/", async (req, res) => {
+  try {
+    const { type } = req.query // Get type from query parameter
+
+    let filter = {}
+    if (type && type !== "all") {
+      filter = { type } // Only delete banners of specific type
+    }
+
+    const banners = await Banner.find(filter)
+
+    // Delete all banner image files (only if not product-type or side)
+    banners.forEach((banner) => {
+      if (banner.type !== "product-type" && banner.type !== "side" && banner.imageUrl) {
+        const filePath = path.join(uploadDir, path.basename(banner.imageUrl))
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath)
+        }
+      }
+    })
+
+    const result = await Banner.deleteMany(filter)
+
+    const message =
+      type && type !== "all"
+        ? `All ${type} banners deleted successfully (${result.deletedCount} banners)`
+        : `All banners deleted successfully (${result.deletedCount} banners)`
+
+    res.json({ message, deletedCount: result.deletedCount })
+  } catch (error) {
+    console.error("❌ Failed to delete banners:", error)
+    res.status(500).json({
+      message: "Failed to delete banners",
+      error: error.message,
+    })
+  }
 })
 
 // DELETE banner
@@ -185,6 +231,7 @@ router.delete("/:id", async (req, res) => {
         fs.unlinkSync(filePath)
       }
     }
+
     res.json({ message: "Banner deleted successfully" })
   } catch (error) {
     console.error("❌ Delete error:", error)
@@ -194,28 +241,5 @@ router.delete("/:id", async (req, res) => {
     })
   }
 })
-
-// DELETE all banners
-router.delete("/", async (req, res) => {
-  try {
-    const banners = await Banner.find();
-
-    // Delete all banner image files (only if not product-type or side)
-    banners.forEach((banner) => {
-      if (banner.type !== "product-type" && banner.type !== "side" && banner.imageUrl) {
-        const filePath = path.join(uploadDir, path.basename(banner.imageUrl));
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      }
-    });
-
-    await Banner.deleteMany(); // remove all banners from DB
-    res.json({ message: "All banners deleted successfully" });
-  } catch (error) {
-    console.error("❌ Failed to delete all banners:", error);
-    res.status(500).json({ message: "Failed to delete all banners", error: error.message });
-  }
-});
 
 export default router
