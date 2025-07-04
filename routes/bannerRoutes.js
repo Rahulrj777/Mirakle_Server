@@ -50,7 +50,7 @@ router.get("/", async (req, res) => {
   }
 })
 
-// POST upload - SIMPLIFIED (no duplicate checking)
+// POST upload - FINAL VERSION (cleaned and clarified)
 router.post("/upload", (req, res) => {
   upload.single("image")(req, res, async (err) => {
     if (err) {
@@ -78,7 +78,7 @@ router.post("/upload", (req, res) => {
         return res.status(400).json({ message: "Banner type is required" })
       }
 
-      // Check type limits
+      // 1️⃣ Type limits (slider max 5, side max 3, etc.)
       const typeLimits = {
         slider: 5,
         side: 3,
@@ -94,31 +94,27 @@ router.post("/upload", (req, res) => {
         return res.status(400).json({ message: `Only ${maxLimit} banners allowed for ${type}` })
       }
 
-      let bannerData = {
-        type,
-        title: title || "",
-      }
+      let bannerData = { type, title: title || "" }
 
-      // Handle product-based banners
+      // 2️⃣ Product-based banner logic
       if (type === "product-type" || type === "side") {
         if (!productId) {
           if (req.file) fs.unlinkSync(req.file.path)
-          return res.status(400).json({ message: "Product ID is required for product-based banners" })
+          return res.status(400).json({ message: "Product ID is required for this banner type" })
         }
 
-        // Clean up uploaded file (not needed for product banners)
-        if (req.file) {
-          fs.unlinkSync(req.file.path)
-        }
+        if (req.file) fs.unlinkSync(req.file.path) // not used for product banners
 
-        // Check for existing product banner (manual duplicate check)
-        const existingProductBanner = await Banner.findOne({
+        const variantIndex = Number.parseInt(selectedVariantIndex) || 0
+
+        // Prevent same product for same type
+        const alreadyExists = await Banner.findOne({
           type,
           productId,
-          selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
+          selectedVariantIndex: variantIndex,
         })
 
-        if (existingProductBanner) {
+        if (alreadyExists) {
           return res.status(409).json({
             message: "This product variant is already added as a banner of this type",
           })
@@ -127,48 +123,45 @@ router.post("/upload", (req, res) => {
         bannerData = {
           ...bannerData,
           productId,
-          selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
+          selectedVariantIndex: variantIndex,
           imageUrl: productImageUrl || "",
-          price: Number.parseFloat(price) || 0,
-          oldPrice: Number.parseFloat(oldPrice) || 0,
-          discountPercent: Number.parseFloat(discountPercent) || 0,
+          price: Number(price) || 0,
+          oldPrice: Number(oldPrice) || 0,
+          discountPercent: Number(discountPercent) || 0,
         }
 
         if (weightValue && weightUnit) {
           bannerData.weight = {
-            value: Number.parseFloat(weightValue),
+            value: Number(weightValue),
             unit: weightUnit,
           }
         }
       } else {
-        // Handle regular banners (require image file)
+        // 3️⃣ Regular image-based banners
         if (!req.file) {
           return res.status(400).json({ message: "Image file is required for this banner type" })
         }
 
-        // SIMPLIFIED: No hash duplicate checking, just save
         bannerData = {
           ...bannerData,
           imageUrl: `/${uploadDir}/${req.file.filename}`,
-          hash: hash || null, // Allow hash to be null
+          hash: hash || null, // don't check uniqueness
         }
       }
 
-      // Save to database - NO duplicate checking
-      const banner = new Banner(bannerData)
-      const savedBanner = await banner.save()
+      // ✅ Save banner
+      const newBanner = new Banner(bannerData)
+      const saved = await newBanner.save()
 
-      console.log("✅ Banner saved successfully")
-      res.status(201).json(savedBanner)
+      console.log("✅ Banner saved")
+      res.status(201).json(saved)
     } catch (error) {
       console.error("❌ Upload error:", error)
 
-      // Clean up file if error occurs
       if (req.file && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path)
       }
 
-      // Handle any MongoDB errors gracefully
       res.status(500).json({
         message: "Server error during upload",
         error: error.message,
