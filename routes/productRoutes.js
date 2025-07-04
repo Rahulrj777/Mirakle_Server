@@ -4,7 +4,6 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import Product from '../models/Product.js';
-import { searchProducts } from '../controllers/productController.js';
 
 const router = express.Router();
 
@@ -16,9 +15,6 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
 });
 const upload = multer({ storage });
-
-// routes/productRoutes.js
-router.get('/search', searchProducts);
 
 /**
  * GET /api/products/all-products
@@ -73,6 +69,20 @@ router.post('/upload-product', upload.array('images', 10), async (req, res) => {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
+
+// GET /api/products/search?query=tomato
+router.get("/search", async (req, res) => {
+  const query = req.query.query || "";
+  try {
+    const results = await Product.find({
+      title: { $regex: query, $options: "i" },
+    }).limit(10);
+    res.json(results);
+  } catch (error) {
+    res.status(500).json({ error: "Search failed" });
+  }
+});
+
 
 /**
  * PUT /api/products/:id

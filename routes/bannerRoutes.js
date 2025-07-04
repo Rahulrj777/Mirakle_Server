@@ -19,47 +19,39 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 },
-})
-
-// Debug middleware
-router.use((req, res, next) => {
-  console.log(`🔥 BANNER ROUTE: ${req.method} ${req.originalUrl}`)
-  next()
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true)
+    } else {
+      cb(new Error("Only image files are allowed"), false)
+    }
+  },
 })
 
 // Test route
 router.get("/test", (req, res) => {
-  console.log("✅ Banner test route hit")
   res.json({
     message: "Banner routes working!",
     timestamp: new Date().toISOString(),
   })
 })
 
-// GET all banners - SIMPLIFIED with error handling
+// GET all banners
 router.get("/", async (req, res) => {
-  console.log("🔥 GET BANNERS REQUEST")
-
   try {
-    // Simple find without populate first
-    const banners = await Banner.find()
-    console.log(`✅ Found ${banners.length} banners`)
+    const banners = await Banner.find().populate("productId", "title images variants")
     res.json(banners)
   } catch (error) {
     console.error("❌ GET banners error:", error)
-    console.error("Error stack:", error.stack)
     res.status(500).json({
       message: "Failed to fetch banners",
       error: error.message,
-      stack: error.stack,
     })
   }
 })
 
-// POST upload - SIMPLIFIED
+// POST upload - SIMPLIFIED (no duplicate checking)
 router.post("/upload", (req, res) => {
-  console.log("🔥 UPLOAD START")
-
   upload.single("image")(req, res, async (err) => {
     if (err) {
       console.log("❌ Multer error:", err.message)
@@ -86,7 +78,21 @@ router.post("/upload", (req, res) => {
         return res.status(400).json({ message: "Banner type is required" })
       }
 
-      console.log("✅ Type:", type)
+      // Check type limits
+      const typeLimits = {
+        slider: 5,
+        side: 3,
+        offer: 1,
+        "product-type": 10,
+      }
+
+      const maxLimit = typeLimits[type] || 10
+      const count = await Banner.countDocuments({ type })
+
+      if (count >= maxLimit) {
+        if (req.file) fs.unlinkSync(req.file.path)
+        return res.status(400).json({ message: `Only ${maxLimit} banners allowed for ${type}` })
+      }
 
       let bannerData = {
         type,
@@ -103,6 +109,19 @@ router.post("/upload", (req, res) => {
         // Clean up uploaded file (not needed for product banners)
         if (req.file) {
           fs.unlinkSync(req.file.path)
+        }
+
+        // Check for existing product banner (manual duplicate check)
+        const existingProductBanner = await Banner.findOne({
+          type,
+          productId,
+          selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
+        })
+
+        if (existingProductBanner) {
+          return res.status(409).json({
+            message: "This product variant is already added as a banner of this type",
+          })
         }
 
         bannerData = {
@@ -127,14 +146,15 @@ router.post("/upload", (req, res) => {
           return res.status(400).json({ message: "Image file is required for this banner type" })
         }
 
+        // SIMPLIFIED: No hash duplicate checking, just save
         bannerData = {
           ...bannerData,
           imageUrl: `/${uploadDir}/${req.file.filename}`,
-          hash: hash || null,
+          hash: hash || null, // Allow hash to be null
         }
       }
 
-      // Save to database
+      // Save to database - NO duplicate checking
       const banner = new Banner(bannerData)
       const savedBanner = await banner.save()
 
@@ -142,17 +162,16 @@ router.post("/upload", (req, res) => {
       res.status(201).json(savedBanner)
     } catch (error) {
       console.error("❌ Upload error:", error)
-      console.error("Error stack:", error.stack)
 
       // Clean up file if error occurs
       if (req.file && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path)
       }
 
+      // Handle any MongoDB errors gracefully
       res.status(500).json({
         message: "Server error during upload",
         error: error.message,
-        stack: error.stack,
       })
     }
   })
@@ -160,14 +179,12 @@ router.post("/upload", (req, res) => {
 
 // DELETE all banners or by specific type
 router.delete("/", async (req, res) => {
-  console.log("🔥 DELETE ALL BANNERS")
-
   try {
-    const { type } = req.query
+    const { type } = req.query // Get type from query parameter
 
     let filter = {}
     if (type && type !== "all") {
-      filter = { type }
+      filter = { type } // Only delete banners of specific type
     }
 
     const banners = await Banner.find(filter)
@@ -199,10 +216,8 @@ router.delete("/", async (req, res) => {
   }
 })
 
-// DELETE single banner
+// DELETE banner
 router.delete("/:id", async (req, res) => {
-  console.log("🔥 DELETE SINGLE BANNER:", req.params.id)
-
   try {
     const banner = await Banner.findByIdAndDelete(req.params.id)
     if (!banner) {
