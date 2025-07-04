@@ -69,7 +69,7 @@ router.post("/upload", (req, res) => {
         oldPrice,
         discountPercent,
         productId,
-        selectedVariantIndex,
+        // selectedVariantIndex,
         productImageUrl,
       } = req.body
 
@@ -127,7 +127,7 @@ router.post("/upload", (req, res) => {
         bannerData = {
           ...bannerData,
           productId,
-          selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
+          // selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
           imageUrl: productImageUrl || "",
           price: Number.parseFloat(price) || 0,
           oldPrice: Number.parseFloat(oldPrice) || 0,
