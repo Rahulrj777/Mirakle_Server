@@ -195,4 +195,27 @@ router.delete("/:id", async (req, res) => {
   }
 })
 
+// DELETE all banners
+router.delete("/", async (req, res) => {
+  try {
+    const banners = await Banner.find();
+
+    // Delete all banner image files (only if not product-type or side)
+    banners.forEach((banner) => {
+      if (banner.type !== "product-type" && banner.type !== "side" && banner.imageUrl) {
+        const filePath = path.join(uploadDir, path.basename(banner.imageUrl));
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
+    });
+
+    await Banner.deleteMany(); // remove all banners from DB
+    res.json({ message: "All banners deleted successfully" });
+  } catch (error) {
+    console.error("❌ Failed to delete all banners:", error);
+    res.status(500).json({ message: "Failed to delete all banners", error: error.message });
+  }
+});
+
 export default router
