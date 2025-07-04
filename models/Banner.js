@@ -4,7 +4,7 @@ const bannerSchema = new mongoose.Schema(
   {
     type: { type: String, required: true },
     imageUrl: { type: String },
-    hash: { type: String }, // No unique constraint at all
+    hash: { type: String },
     title: { type: String },
     productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
     selectedVariantIndex: { type: Number, default: 0 },
@@ -21,6 +21,6 @@ const bannerSchema = new mongoose.Schema(
   },
 )
 
-// NO INDEX AT ALL - Let duplicates happen, we'll handle it in code
 const Banner = mongoose.model("Banner", bannerSchema)
+
 export default Banner
