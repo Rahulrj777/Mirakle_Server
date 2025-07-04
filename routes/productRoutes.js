@@ -70,7 +70,6 @@ router.post('/upload-product', upload.array('images', 10), async (req, res) => {
   }
 });
 
-// routes/productRoutes.js
 router.get("/search", async (req, res) => {
   const query = req.query.query || "";
 
@@ -80,7 +79,7 @@ router.get("/search", async (req, res) => {
         $match: {
           $or: [
             { title: { $regex: query, $options: "i" } },
-            { keywords: { $regex: query, $options: "i" } },
+            { keywords: { $regex: query, $options: "i" } }, // optional
             { description: { $regex: query, $options: "i" } }
           ],
         },
@@ -92,7 +91,19 @@ router.get("/search", async (req, res) => {
               { $regexMatch: { input: "$title", regex: query, options: "i" } }, 3,
               {
                 $cond: [
-                  { $regexMatch: { input: { $toString: "$keywords" }, regex: query, options: "i" } }, 2,
+                  {
+                    $regexMatch: {
+                      input: {
+                        $reduce: {
+                          input: "$keywords",
+                          initialValue: "",
+                          in: { $concat: ["$$value", " ", "$$this"] }
+                        }
+                      },
+                      regex: query,
+                      options: "i"
+                    }
+                  }, 2,
                   {
                     $cond: [
                       { $regexMatch: { input: "$description", regex: query, options: "i" } }, 1, 0
@@ -104,7 +115,7 @@ router.get("/search", async (req, res) => {
           }
         }
       },
-      { $sort: { matchStrength: -1, createdAt: -1 } }, // top matches first
+      { $sort: { matchStrength: -1, createdAt: -1 } },
       { $limit: 10 }
     ]);
 
