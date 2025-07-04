@@ -114,7 +114,7 @@ router.post("/upload", (req, res) => {
         // Check for existing product banner (manual duplicate check)
         const existingProductBanner = await Banner.findOne({
           type,
-          productId,
+          productId
           // selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
         })
 
