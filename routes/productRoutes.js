@@ -4,6 +4,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import Product from '../models/Product.js';
+import { searchProducts } from '../controllers/productController.js';
 
 const router = express.Router();
 
@@ -15,6 +16,9 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
 });
 const upload = multer({ storage });
+
+// routes/productRoutes.js
+router.get('/search', searchProducts);
 
 /**
  * GET /api/products/all-products
@@ -67,51 +71,6 @@ router.post('/upload-product', upload.array('images', 10), async (req, res) => {
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ message: 'Server error', error: err.message });
-  }
-});
-
-// routes/productRoutes.js
-router.get("/search", async (req, res) => {
-  const query = req.query.query || "";
-
-  try {
-    const results = await Product.aggregate([
-      {
-        $match: {
-          $or: [
-            { title: { $regex: query, $options: "i" } },
-            { keywords: { $regex: query, $options: "i" } },
-            { description: { $regex: query, $options: "i" } }
-          ],
-        },
-      },
-      {
-        $addFields: {
-          matchStrength: {
-            $cond: [
-              { $regexMatch: { input: "$title", regex: query, options: "i" } }, 3,
-              {
-                $cond: [
-                  { $regexMatch: { input: { $toString: "$keywords" }, regex: query, options: "i" } }, 2,
-                  {
-                    $cond: [
-                      { $regexMatch: { input: "$description", regex: query, options: "i" } }, 1, 0
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        }
-      },
-      { $sort: { matchStrength: -1, createdAt: -1 } }, // top matches first
-      { $limit: 10 }
-    ]);
-
-    res.json(results);
-  } catch (error) {
-    console.error("Search failed:", error);
-    res.status(500).json({ error: "Search failed" });
   }
 });
 
