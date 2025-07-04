@@ -28,6 +28,19 @@ router.get('/all-products', async (req, res) => {
   }
 });
 
+// GET /api/products/related/:id
+router.get('/related/:id', async (req, res) => {
+  const product = await Product.findById(req.params.id);
+  if (!product || !product.keywords) return res.json([]);
+
+  const related = await Product.find({
+    _id: { $ne: product._id },
+    keywords: { $in: product.keywords },
+  }).limit(10);
+
+  res.json(related);
+});
+
 /**
  * POST /api/products/upload-product
  */
