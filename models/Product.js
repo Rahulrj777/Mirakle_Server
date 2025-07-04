@@ -35,7 +35,7 @@ const productSchema = new mongoose.Schema(
     status: { type: String, enum: ['active', 'inactive'], default: 'active' }, // ✅ Useful for admin filtering
   },
   {
-    timestamps: true, // ✅ Adds createdAt and updatedAt
+    timestamps: true,
   }
 );
 
