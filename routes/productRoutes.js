@@ -28,7 +28,6 @@ router.get('/all-products', async (req, res) => {
   }
 });
 
-// Get related products by keyword
 router.get("/related/:id", async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
@@ -36,13 +35,28 @@ router.get("/related/:id", async (req, res) => {
 
     const keywords = product.keywords || [];
 
-    // Find products with at least one shared keyword, excluding current product
-    const related = await Product.find({
+    // Step 1: Try to find related products by keywords
+    let related = await Product.find({
       _id: { $ne: product._id },
       keywords: { $in: keywords },
     }).limit(10);
 
-    res.json(related);
+    // Step 2: Fallback - if fewer than 4 related, fetch random products
+    if (related.length < 4) {
+      const additional = await Product.find({
+        _id: { $ne: product._id },
+      }).limit(10);
+
+      // Avoid duplicates
+      const existingIds = new Set(related.map(p => p._id.toString()));
+      additional.forEach(p => {
+        if (!existingIds.has(p._id.toString())) {
+          related.push(p);
+        }
+      });
+    }
+
+    res.json(related.slice(0, 10)); // send top 10 only
   } catch (error) {
     console.error("Failed to fetch related products:", error);
     res.status(500).json({ message: "Server error" });
