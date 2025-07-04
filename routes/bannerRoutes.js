@@ -118,11 +118,11 @@ router.post("/upload", (req, res) => {
           // selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
         })
 
-        if (existingProductBanner) {
-          return res.status(409).json({
-            message: "This product variant is already added as a banner of this type",
-          })
-        }
+        // if (existingProductBanner) {
+        //   return res.status(409).json({
+        //     message: "This product variant is already added as a banner of this type",
+        //   })
+        // }
 
         bannerData = {
           ...bannerData,
