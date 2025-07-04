@@ -72,6 +72,20 @@ router.post('/upload-product', upload.array('images', 10), async (req, res) => {
   }
 });
 
+// GET /api/products/search?query=tomato
+router.get("/search", async (req, res) => {
+  const query = req.query.query || "";
+  try {
+    const results = await Product.find({
+      title: { $regex: query, $options: "i" },
+    }).limit(10);
+    res.json(results);
+  } catch (error) {
+    res.status(500).json({ error: "Search failed" });
+  }
+});
+
+
 /**
  * PUT /api/products/:id
  */
