@@ -12,8 +12,7 @@ const auth = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // You can access user info in the controller using req.user
-    next();
+    req.userId = decoded.userId;
   } catch (error) {
     return res.status(401).json({ message: "Invalid token" });
   }

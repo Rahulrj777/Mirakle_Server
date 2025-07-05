@@ -14,11 +14,11 @@ export const login = async (req, res) => {
     // ✅ Generate JWT token
     const token = jwt.sign(
       { id: user._id, email: user.email },
-      "mirakle_secret_key", // You should move this to process.env.JWT_SECRET later
+      "mirakle_secret_key",
       { expiresIn: "7d" }
     );
 
-    res.status(200).json({ user, token }); // ✅ Send token to frontend
+    res.status(200).json({ user, token }); 
   } catch (err) {
     res.status(500).json({ message: "Login failed", error: err.message });
   }
