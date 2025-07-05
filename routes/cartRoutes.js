@@ -6,35 +6,29 @@ const router = express.Router();
 
 // Get user's cart
 router.get('/', authMiddleware, async (req, res) => {
-  const cart = await Cart.findOne({ userId: req.user.id }); // ✅ fixed
+  const cart = await Cart.findOne({ userId: req.userId });
   res.json(cart?.items || []);
 });
 
+// Save/update cart
 router.post('/', authMiddleware, async (req, res) => {
-  try {
-    console.log("🔐 req.user:", req.user); // ✅ check decoded user
-    console.log("🛒 Items received:", req.body.items);
+  const { items } = req.body;
+  let cart = await Cart.findOne({ userId: req.user.userId })
 
-    const { items } = req.body;
-    let cart = await Cart.findOne({ userId: req.user.id });
 
-    if (cart) {
-      cart.items = items;
-    } else {
-      cart = new Cart({ userId: req.user.id, items });
-    }
-
-    await cart.save();
-    res.json({ message: 'Cart saved' });
-  } catch (error) {
-    console.error("❌ Cart save failed:", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
+  if (cart) {
+    cart.items = items;
+  } else {
+    cart = new Cart({ userId: req.userId, items });
   }
+
+  await cart.save();
+  res.json({ message: 'Cart saved' });
 });
 
 // Clear cart
 router.delete('/', authMiddleware, async (req, res) => {
-  await Cart.findOneAndDelete({ userId: req.user.id }); // ✅ fixed
+  await Cart.findOneAndDelete({ userId: req.userId });
   res.json({ message: 'Cart cleared' });
 });
 
