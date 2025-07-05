@@ -10,19 +10,26 @@ router.get('/', authMiddleware, async (req, res) => {
   res.json(cart?.items || []);
 });
 
-// Save/update cart
 router.post('/', authMiddleware, async (req, res) => {
-  const { items } = req.body;
-  let cart = await Cart.findOne({ userId: req.user.id }); // ✅ fixed
+  try {
+    console.log("🔐 req.user:", req.user); // ✅ check decoded user
+    console.log("🛒 Items received:", req.body.items);
 
-  if (cart) {
-    cart.items = items;
-  } else {
-    cart = new Cart({ userId: req.user.id, items }); // ✅ fixed
+    const { items } = req.body;
+    let cart = await Cart.findOne({ userId: req.user.id });
+
+    if (cart) {
+      cart.items = items;
+    } else {
+      cart = new Cart({ userId: req.user.id, items });
+    }
+
+    await cart.save();
+    res.json({ message: 'Cart saved' });
+  } catch (error) {
+    console.error("❌ Cart save failed:", error.message);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
-
-  await cart.save();
-  res.json({ message: 'Cart saved' });
 });
 
 // Clear cart
