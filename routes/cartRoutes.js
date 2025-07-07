@@ -15,7 +15,7 @@
     }
   });
 
-// Add item(s) to cart (merge style)
+// Add to cart (merge behavior)
 router.post("/", authMiddleware, async (req, res) => {
   const userId = req.user.userId;
   const { items } = req.body;
@@ -27,14 +27,14 @@ router.post("/", authMiddleware, async (req, res) => {
       cart = new Cart({ userId, items });
     } else {
       for (const newItem of items) {
-        const existingIndex = cart.items.findIndex(
-          (i) => i.productId.toString() === newItem.productId.toString()
+        const index = cart.items.findIndex(
+          (i) => i.productId.toString() === newItem._id.toString()
         );
 
-        if (existingIndex !== -1) {
-          cart.items[existingIndex].quantity += newItem.quantity || 1;
+        if (index !== -1) {
+          cart.items[index].quantity += newItem.quantity || 1;
         } else {
-          cart.items.push(newItem);
+          cart.items.push({ ...newItem, productId: newItem._id });
         }
       }
     }
@@ -42,10 +42,11 @@ router.post("/", authMiddleware, async (req, res) => {
     await cart.save();
     res.json({ message: "Item(s) added to cart", cart });
   } catch (error) {
-    console.error("❌ Add to cart failed:", error);
-    res.status(500).json({ error: "Failed to add to cart" });
+    console.error("❌ Add to cart error:", error);
+    res.status(500).json({ error: "Failed to add item to cart" });
   }
 });
+
 
   router.delete("/", authMiddleware, async (req, res) => {
     try {
