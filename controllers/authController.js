@@ -1,3 +1,4 @@
+// controllers/authController.js
 import User from "../models/User.js";
 import jwt from "jsonwebtoken";
 
@@ -13,7 +14,7 @@ export const login = async (req, res) => {
 
     // ✅ Generate JWT token
     const token = jwt.sign(
-      { id: user._id, email: user.email },
+      { userId: user._id, email: user.email },
       "mirakle_secret_key",
       { expiresIn: "7d" }
     );

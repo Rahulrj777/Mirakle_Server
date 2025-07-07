@@ -1,4 +1,5 @@
-  import express from 'express';
+ // File: routes/cartRoutes.js
+ import express from 'express';
   import Cart from '../models/Cart.js';
   import authMiddleware from '../middleware/auth.js';
 
