@@ -29,14 +29,10 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+// app.options("*", cors(corsOptions));
 
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
-
-app.use((req, res, next) => {
-  console.log("📥 Request received:", req.method, req.url);
-  next();
-});
 
 app.use("/api/products", productRoutes);
 app.use("/api/banners", bannerRoutes);

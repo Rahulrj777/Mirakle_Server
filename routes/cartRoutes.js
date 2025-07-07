@@ -5,57 +5,36 @@
 
   const router = express.Router();
 
-  router.get("/", authMiddleware, async (req, res) => {
-    try {
-      const userId = req.user.userId;
-      const cart = await Cart.findOne({ userId });
-      res.json(cart?.items || []);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to load cart" });
-    }
-  });
-
-// Add to cart (merge behavior)
-router.post("/", authMiddleware, async (req, res) => {
-  const userId = req.user.userId;
-  const { items } = req.body;
-
+// GET: Load cart for user
+router.get("/", authMiddleware, async (req, res) => {
   try {
-    let cart = await Cart.findOne({ userId });
-
-    if (!cart) {
-      cart = new Cart({ userId, items });
-    } else {
-      for (const newItem of items) {
-        const index = cart.items.findIndex(
-          (i) => i.productId.toString() === newItem._id.toString()
-        );
-
-        if (index !== -1) {
-          cart.items[index].quantity += newItem.quantity || 1;
-        } else {
-          cart.items.push({ ...newItem, productId: newItem._id });
-        }
-      }
-    }
-
-    await cart.save();
-    res.json({ message: "Item(s) added to cart", cart });
+    const cart = await Cart.findOne({ userId: req.user.id });
+    res.json(cart?.items || []);
   } catch (error) {
-    console.error("❌ Add to cart error:", error);
-    res.status(500).json({ error: "Failed to add item to cart" });
+    res.status(500).json({ error: "Failed to load cart" });
   }
 });
 
+// POST: Save or update cart
+router.post("/update", authMiddleware, async (req, res) => {
+  try {
+    const { items } = req.body;
+    const updated = await Cart.findOneAndUpdate(
+      { userId: req.user.id },
+      { $set: { items } },
+      { new: true, upsert: true }
+    );
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to update cart" });
+  }
+});
 
-  router.delete("/", authMiddleware, async (req, res) => {
-    try {
-      const userId = req.user.userId;
-      await Cart.findOneAndDelete({ userId });
-      res.json({ message: "Cart cleared" });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to clear cart" });
-    }
-  });
+// DELETE cart
+router.delete('/', authMiddleware, async (req, res) => {
+  const cart = await Cart.findOne({ userId });
+  await Cart.findOneAndDelete({ userId });
+  res.json({ message: 'Cart cleared' });
+});
 
-export default router;
+  export default router;
