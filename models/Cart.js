@@ -2,7 +2,7 @@
 import mongoose from "mongoose";
 
 const itemSchema = new mongoose.Schema({
-  _id: mongoose.Schema.Types.ObjectId,
+  productId:mongoose.Schema.Types.ObjectId,
   title: String,
   images: Object,
   weight: {
