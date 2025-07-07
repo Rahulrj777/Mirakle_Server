@@ -58,8 +58,6 @@ router.get("/", async (req, res) => {
 
 // POST upload - SIMPLIFIED
 router.post("/upload", (req, res) => {
-  console.log("🔥 UPLOAD START")
-
   upload.single("image")(req, res, async (err) => {
     if (err) {
       console.log("❌ Multer error:", err.message)
