@@ -5,7 +5,6 @@
 
   const router = express.Router();
 
- // Save/update cart - merge items instead of replacing
   router.post('/', authMiddleware, async (req, res) => {
     try {
       const { items } = req.body;
