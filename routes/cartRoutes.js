@@ -17,10 +17,11 @@
 
 router.post('/update', authMiddleware, async (req, res) => {
   try {
-    console.log("🛒 Incoming cart update request");
-    console.log("👉 Request body:", req.body);
-    console.log("🔐 Decoded user ID:", req.user?.id);
-
+    console.log("🛒 Incoming POST /cart/update");
+    console.log("Headers:", req.headers);
+    console.log("Body:", req.body);
+    console.log("Decoded user:", req.user);
+    
     const userId = req.user.id;
     const items = req.body.items;
 
