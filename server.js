@@ -2,6 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import cors from 'cors';
+
 import bannerRoutes from './routes/bannerRoutes.js';
 import productRoutes from './routes/productRoutes.js';
 import userRoutes from './routes/userRoutes.js';
@@ -17,7 +18,7 @@ const allowedOrigins = [
   "https://mirakle-admin.vercel.app",
 ];
 
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
@@ -26,7 +27,7 @@ app.use(cors({
     }
   },
   credentials: true,
-}));
+};
 
 app.use(cors(corsOptions));
 

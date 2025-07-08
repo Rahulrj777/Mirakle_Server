@@ -1,3 +1,15 @@
+import mongoose from 'mongoose';
+
+const variantSchema = new mongoose.Schema({
+  size: { type: String },
+  weight: {
+    value: { type: Number, default: 0 },
+    unit: { type: String, enum: ['g', 'ml', 'li'], default: 'g' },
+  },
+  price: { type: Number },
+}, { _id: false });
+
+// Now define the main product schema
 const productSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
@@ -25,9 +37,13 @@ const productSchema = new mongoose.Schema(
 
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },
 
-    keywords: { type: [String], default: [] }, 
+    keywords: { type: [String], default: [] },
   },
   {
     timestamps: true,
   }
 );
+
+const Product = mongoose.model("Product", productSchema);
+
+export default Product;
