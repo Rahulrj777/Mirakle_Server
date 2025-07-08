@@ -21,7 +21,6 @@ router.post('/update', authMiddleware, async (req, res) => {
     console.log("Headers:", req.headers);
     console.log("Body:", req.body);
     console.log("Decoded user:", req.user);
-
     const userId = req.user.userId;
     const items = req.body.items;
 
