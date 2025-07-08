@@ -15,35 +15,31 @@
     }
   });
 
-// Add to cart (merge behavior)
-router.post("/", authMiddleware, async (req, res) => {
-  const userId = req.user.userId;
-  const { items } = req.body;
-
+router.post('/update', authMiddleware, async (req, res) => {
   try {
-    let cart = await Cart.findOne({ userId });
+    console.log("🛒 Incoming cart update request");
+    console.log("👉 Request body:", req.body);
+    console.log("🔐 Decoded user ID:", req.user?.id);
 
-    if (!cart) {
-      cart = new Cart({ userId, items });
-    } else {
-      for (const newItem of items) {
-        const index = cart.items.findIndex(
-          (i) => i.productId.toString() === newItem._id.toString()
-        );
+    const userId = req.user.id;
+    const items = req.body.items;
 
-        if (index !== -1) {
-          cart.items[index].quantity += newItem.quantity || 1;
-        } else {
-          cart.items.push({ ...newItem, productId: newItem._id });
-        }
-      }
+    if (!items || !Array.isArray(items)) {
+      return res.status(400).json({ message: "Invalid items format" });
     }
 
-    await cart.save();
-    res.json({ message: "Item(s) added to cart", cart });
+    const cart = await Cart.findOneAndUpdate(
+      { userId },
+      { $set: { items } },
+      { new: true, upsert: true }
+    );
+
+    console.log("✅ Cart successfully updated:", cart);
+
+    res.status(200).json({ message: "Item(s) added to cart", cart });
   } catch (error) {
-    console.error("❌ Add to cart error:", error);
-    res.status(500).json({ error: "Failed to add item to cart" });
+    console.error("🔥 Cart Update Error:", error);
+    res.status(500).json({ message: "Server error while updating cart" });
   }
 });
 
