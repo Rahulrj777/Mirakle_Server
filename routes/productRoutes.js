@@ -4,6 +4,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import Product from '../models/Product.js';
+import { verifyToken } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -35,19 +36,16 @@ router.get("/related/:id", async (req, res) => {
 
     const keywords = product.keywords || [];
 
-    // Step 1: Try to find related products by keywords
     let related = await Product.find({
       _id: { $ne: product._id },
       keywords: { $in: keywords },
     }).limit(10);
 
-    // Step 2: Fallback - if fewer than 4 related, fetch random products
     if (related.length < 4) {
       const additional = await Product.find({
         _id: { $ne: product._id },
       }).limit(10);
 
-      // Avoid duplicates
       const existingIds = new Set(related.map(p => p._id.toString()));
       additional.forEach(p => {
         if (!existingIds.has(p._id.toString())) {
@@ -56,7 +54,7 @@ router.get("/related/:id", async (req, res) => {
       });
     }
 
-    res.json(related.slice(0, 10)); // send top 10 only
+    res.json(related.slice(0, 10));
   } catch (error) {
     console.error("Failed to fetch related products:", error);
     res.status(500).json({ message: "Server error" });
@@ -79,7 +77,7 @@ router.post('/upload-product', upload.array('images', 10), async (req, res) => {
     try {
       parsedVariants = JSON.parse(variants);
       parsedDetails = details ? JSON.parse(details) : {};
-      parsedKeywords = keywords ? JSON.parse(keywords) : []; // ✅ parse keywords
+      parsedKeywords = keywords ? JSON.parse(keywords) : [];
     } catch (err) {
       return res.status(400).json({ message: 'Invalid JSON in variants, details, or keywords' });
     }
@@ -91,7 +89,7 @@ router.post('/upload-product', upload.array('images', 10), async (req, res) => {
       variants: parsedVariants,
       description: description || '',
       details: parsedDetails,
-      keywords: parsedKeywords, // ✅ storing keywords
+      keywords: parsedKeywords,
       images: {
         others: images,
       },
@@ -114,7 +112,7 @@ router.get("/search", async (req, res) => {
         $match: {
           $or: [
             { title: { $regex: query, $options: "i" } },
-            { keywords: { $regex: query, $options: "i" } }, // optional
+            { keywords: { $regex: query, $options: "i" } },
             { description: { $regex: query, $options: "i" } }
           ],
         },
@@ -161,6 +159,32 @@ router.get("/search", async (req, res) => {
   }
 });
 
+router.post('/:id/review', verifyToken, async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    const alreadyReviewed = product.reviews?.find(r => r.user.toString() === req.user.id);
+    if (alreadyReviewed) return res.status(400).json({ message: 'You already reviewed this product' });
+
+    const newReview = {
+      user: req.user.id,
+      rating: Number(req.body.rating),
+      comment: req.body.comment,
+      createdAt: new Date(),
+    };
+
+    product.reviews = product.reviews || [];
+    product.reviews.push(newReview);
+    await product.save();
+
+    res.status(201).json({ message: 'Review added' });
+  } catch (err) {
+    console.error('Review error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
 /**
  * PUT /api/products/:id
  */
@@ -184,7 +208,7 @@ router.put('/:id', upload.array('images', 10), async (req, res) => {
 
     if (keywords) {
       try {
-        product.keywords = JSON.parse(keywords); // ✅ store keywords
+        product.keywords = JSON.parse(keywords);
       } catch (err) {
         return res.status(400).json({ message: 'Invalid keywords JSON' });
       }
@@ -227,9 +251,6 @@ router.put('/:id', upload.array('images', 10), async (req, res) => {
   }
 });
 
-/**
- * PUT /api/products/:id/toggle-stock
- */
 router.put('/:id/toggle-stock', async (req, res) => {
   try {
     const { isOutOfStock } = req.body;
@@ -244,15 +265,11 @@ router.put('/:id/toggle-stock', async (req, res) => {
   }
 });
 
-/**
- * DELETE /api/products/:id
- */
 router.delete('/:id', async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    // Delete all associated image files
     if (product.images && product.images.others) {
       for (const imgPath of product.images.others) {
         const fullPath = path.join(uploadDir, path.basename(imgPath));
