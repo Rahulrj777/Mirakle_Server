@@ -15,7 +15,7 @@
     }
   });
 
-router.post('/update', authMiddleware, async (req, res) => {
+router.post('/', authMiddleware, async (req, res) => {
   try {
     console.log("🛒 Incoming POST /cart/update");
     console.log("Headers:", req.headers);
