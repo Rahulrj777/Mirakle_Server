@@ -1,12 +1,11 @@
  // File: routes/cartRoutes.js
  import express from 'express';
   import Cart from '../models/Cart.js';
-  import auth from '../middleware/auth.js';
-  import { verifyToken } from "../middleware/verifyToken.js";
+  import authMiddleware from '../middleware/auth.js';
 
   const router = express.Router();
 
-  router.get("/", auth, async (req, res) => {
+  router.get("/", authMiddleware, async (req, res) => {
     try {
       const userId = req.user.userId;
       const cart = await Cart.findOne({ userId });
@@ -16,44 +15,12 @@
     }
   });
 
-  router.post('/add', verifyToken, async (req, res) => {
+router.post('/', authMiddleware, async (req, res) => {
   try {
-    const userId = req.user.id;
-    const { item } = req.body;
-
-    let cart = await Cart.findOne({ user: userId });
-
-    if (!cart) {
-      cart = new Cart({ user: userId, items: [item] });
-    } else {
-      const existingItem = cart.items.find(i => i._id.toString() === item._id);
-      if (existingItem) {
-        existingItem.quantity += 1;
-      } else {
-        cart.items.push(item);
-      }
-    }
-    
-    router.get("/cart", verifyToken, async (req, res) => {
-      try {
-        const userId = req.user.id;
-        const cart = await Cart.findOne({ user: userId });
-        res.status(200).json(cart?.items || []);
-      } catch (err) {
-        res.status(500).json({ message: "Failed to fetch cart" });
-      }
-    });
-
-    await cart.save();
-    res.status(200).json(cart);
-  } catch (err) {
-    console.error("Cart add error:", err);
-    res.status(500).json({ message: "Failed to add to cart" });
-  }
-});
-
-router.post('/', auth, async (req, res) => {
-  try {
+    console.log("🛒 Incoming POST /cart/update");
+    console.log("Headers:", req.headers);
+    console.log("Body:", req.body);
+    console.log("Decoded user:", req.user);
     const userId = req.user.userId;
     const items = req.body.items;
 
@@ -76,7 +43,7 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-  router.delete("/", auth, async (req, res) => {
+  router.delete("/", authMiddleware, async (req, res) => {
     try {
       const userId = req.user.userId;
       await Cart.findOneAndDelete({ userId });
