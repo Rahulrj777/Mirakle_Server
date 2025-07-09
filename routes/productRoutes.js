@@ -31,8 +31,8 @@ router.post('/:productId/review/:reviewId/like', verifyToken, async (req, res) =
     if (review.likes.includes(userId)) {
       review.likes.pull(userId); // Unlike
     } else {
-      review.dislikes.pull(userId); // Remove dislike if exists
-      review.likes.push(userId);    // Add like
+      review.dislikes.pull(userId); 
+      review.likes.push(userId);
     }
 
     await product.save();
@@ -54,10 +54,10 @@ router.post('/:productId/review/:reviewId/dislike', verifyToken, async (req, res
     if (!review) return res.status(404).json({ message: "Review not found" });
 
     if (review.dislikes.includes(userId)) {
-      review.dislikes.pull(userId); // Undo dislike
+      review.dislikes.pull(userId);
     } else {
-      review.likes.pull(userId);    // Remove like if exists
-      review.dislikes.push(userId); // Add dislike
+      review.likes.pull(userId); 
+      review.dislikes.push(userId); 
     }
 
     await product.save();
