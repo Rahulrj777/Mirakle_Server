@@ -30,11 +30,16 @@ router.get('/all-products', async (req, res) => {
 });
 
 router.get("/related/:id", async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid product ID" });
+  }
+
   try {
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findById(id);
     if (!product) return res.status(404).json({ message: "Product not found" });
 
-    const keywords = product.keywords || [];
+    const keywords = Array.isArray(product.keywords) ? product.keywords : [];
 
     let related = await Product.find({
       _id: { $ne: product._id },
@@ -57,7 +62,7 @@ router.get("/related/:id", async (req, res) => {
     res.json(related.slice(0, 10));
   } catch (error) {
     console.error("Failed to fetch related products:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 });
 
@@ -221,7 +226,6 @@ router.put('/:id', upload.array('images', 10), async (req, res) => {
     }
 
     const newImages = req.files.map(file => `/${uploadDir}/${file.filename}`);
-
     if (removedImages) {
       try {
         const removed = JSON.parse(removedImages);
