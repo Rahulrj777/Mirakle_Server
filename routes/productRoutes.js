@@ -167,6 +167,7 @@ router.post('/:id/review', verifyToken, async (req, res) => {
     const alreadyReviewed = product.reviews?.find(r => r.user.toString() === req.user.id);
     if (alreadyReviewed) return res.status(400).json({ message: 'You already reviewed this product' });
 
+
     const newReview = {
       user: req.user.id,
       rating: Number(req.body.rating),
