@@ -3,8 +3,8 @@ import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import protect from '../models/Product.js';
-import { protect } from '../middleware/auth.js';
+import product from '../models/Product.js';
+import auth from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -160,10 +160,7 @@ router.get("/search", async (req, res) => {
 });
 
 // POST /api/products/:id/review
-router.post('/:id/review', protect, async (req, res) => {
-  console.log("🔒 Protected Review Route Hit");
-  console.log("Product ID:", req.params.id);
-  console.log("User:", req.user);
+router.post('/:id/review', auth, async (req, res) => {
   const product = await Product.findById(req.params.id);
   if (!product) return res.status(404).json({ message: 'Product not found' });
 
