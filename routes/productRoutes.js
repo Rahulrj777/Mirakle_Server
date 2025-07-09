@@ -4,7 +4,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import Product from '../models/Product.js';
-import { verifyToken } from '../middleware/authMiddleware.js';
+import  auth from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -17,9 +17,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-/**
- * GET /api/products/all-products
- */
 router.get('/all-products', async (req, res) => {
   try {
     const products = await Product.find();
@@ -33,19 +30,15 @@ router.get("/related/:id", async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Product not found" });
-
     const keywords = product.keywords || [];
-
     let related = await Product.find({
       _id: { $ne: product._id },
       keywords: { $in: keywords },
     }).limit(10);
-
     if (related.length < 4) {
       const additional = await Product.find({
         _id: { $ne: product._id },
       }).limit(10);
-
       const existingIds = new Set(related.map(p => p._id.toString()));
       additional.forEach(p => {
         if (!existingIds.has(p._id.toString())) {
@@ -53,7 +46,6 @@ router.get("/related/:id", async (req, res) => {
         }
       });
     }
-
     res.json(related.slice(0, 10));
   } catch (error) {
     console.error("Failed to fetch related products:", error);
@@ -61,19 +53,13 @@ router.get("/related/:id", async (req, res) => {
   }
 });
 
-/**
- * POST /api/products/upload-product
- */
 router.post('/upload-product', upload.array('images', 10), async (req, res) => {
   try {
     const { name, variants, description, details, keywords } = req.body;
-
     if (!name || !variants) {
       return res.status(400).json({ message: 'Product name and variants are required' });
     }
-
     let parsedVariants, parsedDetails, parsedKeywords;
-
     try {
       parsedVariants = JSON.parse(variants);
       parsedDetails = details ? JSON.parse(details) : {};
@@ -81,9 +67,7 @@ router.post('/upload-product', upload.array('images', 10), async (req, res) => {
     } catch (err) {
       return res.status(400).json({ message: 'Invalid JSON in variants, details, or keywords' });
     }
-
     const images = req.files.map(file => `/${uploadDir}/${file.filename}`);
-
     const newProduct = new Product({
       title: name,
       variants: parsedVariants,
@@ -94,7 +78,6 @@ router.post('/upload-product', upload.array('images', 10), async (req, res) => {
         others: images,
       },
     });
-
     await newProduct.save();
     res.status(201).json(newProduct);
   } catch (err) {
@@ -105,7 +88,6 @@ router.post('/upload-product', upload.array('images', 10), async (req, res) => {
 
 router.get("/search", async (req, res) => {
   const query = req.query.query || "";
-
   try {
     const results = await Product.aggregate([
       {
@@ -151,7 +133,6 @@ router.get("/search", async (req, res) => {
       { $sort: { matchStrength: -1, createdAt: -1 } },
       { $limit: 10 }
     ]);
-
     res.json(results);
   } catch (error) {
     console.error("Search failed:", error);
@@ -159,25 +140,21 @@ router.get("/search", async (req, res) => {
   }
 });
 
-router.post('/:id/review', verifyToken, async (req, res) => {
+router.post('/:id/review', auth, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
-
     const alreadyReviewed = product.reviews?.find(r => r.user.toString() === req.user.id);
     if (alreadyReviewed) return res.status(400).json({ message: 'You already reviewed this product' });
-
     const newReview = {
       user: req.user.id,
       rating: Number(req.body.rating),
       comment: req.body.comment,
       createdAt: new Date(),
     };
-
     product.reviews = product.reviews || [];
     product.reviews.push(newReview);
     await product.save();
-
     res.status(201).json({ message: 'Review added' });
   } catch (err) {
     console.error('Review error:', err);
@@ -185,19 +162,13 @@ router.post('/:id/review', verifyToken, async (req, res) => {
   }
 });
 
-/**
- * PUT /api/products/:id
- */
 router.put('/:id', upload.array('images', 10), async (req, res) => {
   try {
     const { name, variants, description, details, removedImages, keywords } = req.body;
-
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
-
     product.title = name || product.title;
     product.description = description || '';
-
     if (details) {
       try {
         product.details = JSON.parse(details);
@@ -205,7 +176,6 @@ router.put('/:id', upload.array('images', 10), async (req, res) => {
         product.details = {};
       }
     }
-
     if (keywords) {
       try {
         product.keywords = JSON.parse(keywords);
@@ -213,7 +183,6 @@ router.put('/:id', upload.array('images', 10), async (req, res) => {
         return res.status(400).json({ message: 'Invalid keywords JSON' });
       }
     }
-
     if (variants) {
       try {
         const parsedVariants = JSON.parse(variants);
@@ -222,9 +191,7 @@ router.put('/:id', upload.array('images', 10), async (req, res) => {
         return res.status(400).json({ message: 'Invalid variants JSON' });
       }
     }
-
     const newImages = req.files.map(file => `/${uploadDir}/${file.filename}`);
-
     if (removedImages) {
       try {
         const removed = JSON.parse(removedImages);
@@ -240,9 +207,7 @@ router.put('/:id', upload.array('images', 10), async (req, res) => {
         return res.status(400).json({ message: 'Invalid removedImages JSON' });
       }
     }
-
     product.images.others = [...product.images.others, ...newImages];
-
     await product.save();
     res.json({ message: 'Product updated successfully', product });
   } catch (err) {
@@ -269,14 +234,12 @@ router.delete('/:id', async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
-
     if (product.images && product.images.others) {
       for (const imgPath of product.images.others) {
         const fullPath = path.join(uploadDir, path.basename(imgPath));
         if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
       }
     }
-
     res.json({ message: 'Product deleted' });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
