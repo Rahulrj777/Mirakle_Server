@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import Product from '../models/Product.js';
 import  auth from '../middleware/auth.js';
+import { verifyToken } from "../middleware/verifyToken.js";
 
 const router = express.Router();
 
@@ -16,6 +17,58 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
 });
 const upload = multer({ storage });
+
+// ✅ Like Review
+router.post('/:productId/review/:reviewId/like', verifyToken, async (req, res) => {
+  try {
+    const { productId, reviewId } = req.params;
+    const userId = req.user.id;
+
+    const product = await Product.findById(productId);
+    const review = product.reviews.id(reviewId);
+
+    if (!review) return res.status(404).json({ message: "Review not found" });
+
+    if (review.likes.includes(userId)) {
+      review.likes.pull(userId); // Unlike
+    } else {
+      review.dislikes.pull(userId); // Remove dislike if exists
+      review.likes.push(userId);    // Add like
+    }
+
+    await product.save();
+    res.status(200).json({ message: "Liked/unliked", review });
+  } catch (err) {
+    console.error("Like Review Error:", err);
+    res.status(500).json({ message: "Something went wrong" });
+  }
+});
+
+// ✅ Dislike Review
+router.post('/:productId/review/:reviewId/dislike', verifyToken, async (req, res) => {
+  try {
+    const { productId, reviewId } = req.params;
+    const userId = req.user.id;
+
+    const product = await Product.findById(productId);
+    const review = product.reviews.id(reviewId);
+
+    if (!review) return res.status(404).json({ message: "Review not found" });
+
+    if (review.dislikes.includes(userId)) {
+      review.dislikes.pull(userId); // Undo dislike
+    } else {
+      review.likes.pull(userId);    // Remove like if exists
+      review.dislikes.push(userId); // Add dislike
+    }
+
+    await product.save();
+    res.status(200).json({ message: "Disliked/undisliked", review });
+  } catch (err) {
+    console.error("Dislike Review Error:", err);
+    res.status(500).json({ message: "Something went wrong" });
+  }
+});
 
 router.get('/all-products', async (req, res) => {
   try {
@@ -260,5 +313,10 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
+
+router.post('/:productId/review/:reviewId/like', verifyToken, likeReview);
+
+router.post('/:productId/review/:reviewId/dislike', verifyToken, dislikeReview);
+
 
 export default router;
