@@ -312,9 +312,4 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-router.post('/:productId/review/:reviewId/like', verifyToken, likeReview);
-
-router.post('/:productId/review/:reviewId/dislike', verifyToken, dislikeReview);
-
-
 export default router;
