@@ -159,31 +159,27 @@ router.get("/search", async (req, res) => {
   }
 });
 
-router.post('/:id/review', verifyToken, async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ message: 'Product not found' });
+// POST /api/products/:id/review
+router.post('/:id/review', protect, async (req, res) => {
+  const product = await Product.findById(req.params.id);
+  if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    const alreadyReviewed = product.reviews?.find(r => r.user.toString() === req.user.id);
-    if (alreadyReviewed) return res.status(400).json({ message: 'You already reviewed this product' });
+  const alreadyReviewed = product.reviews.find(
+    (r) => r.user.toString() === req.user._id.toString()
+  );
+  if (alreadyReviewed) return res.status(400).json({ message: 'Already reviewed' });
 
+  const review = {
+    user: req.user._id,
+    rating: req.body.rating,
+    comment: req.body.comment,
+    createdAt: new Date(),
+  };
 
-    const newReview = {
-      user: req.user.id,
-      rating: Number(req.body.rating),
-      comment: req.body.comment,
-      createdAt: new Date(),
-    };
+  product.reviews.push(review);
+  await product.save();
 
-    product.reviews = product.reviews || [];
-    product.reviews.push(newReview);
-    await product.save();
-
-    res.status(201).json({ message: 'Review added' });
-  } catch (err) {
-    console.error('Review error:', err);
-    res.status(500).json({ message: 'Server error', error: err.message });
-  }
+  res.status(201).json({ message: 'Review added' });
 });
 
 /**
