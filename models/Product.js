@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 
-// Variant Schema
 const variantSchema = new mongoose.Schema({
   size: { type: String },
   weight: {
@@ -10,7 +9,6 @@ const variantSchema = new mongoose.Schema({
   price: { type: Number },
 }, { _id: false });
 
-// ✅ Review Schema
 const reviewSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   name: { type: String, required: true },
@@ -19,7 +17,6 @@ const reviewSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 }, { _id: false });
 
-// ✅ Product Schema
 const productSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },

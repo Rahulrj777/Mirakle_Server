@@ -18,7 +18,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// ✅ Like Review
 router.post('/:productId/review/:reviewId/like', verifyToken, async (req, res) => {
   try {
     const { productId, reviewId } = req.params;
@@ -44,7 +43,6 @@ router.post('/:productId/review/:reviewId/like', verifyToken, async (req, res) =
   }
 });
 
-// ✅ Dislike Review
 router.post('/:productId/review/:reviewId/dislike', verifyToken, async (req, res) => {
   try {
     const { productId, reviewId } = req.params;
