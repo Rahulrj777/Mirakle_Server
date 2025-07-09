@@ -4,7 +4,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import Product from '../models/Product.js';
-import { verifyToken } from '../middleware/authMiddleware.js';
+import { Product } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
