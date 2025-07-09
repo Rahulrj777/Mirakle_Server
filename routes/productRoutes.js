@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import Product from '../models/Product.js';
 import auth from '../middleware/auth.js';
+import Cart from '../models/Cart.js'
 
 const router = express.Router();
 
@@ -17,9 +18,64 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-/**
- * GET /api/products/all-products
- */
+// GET /api/cart
+router.get('/', auth, async (req, res) => {
+  try {
+    let cart = await Cart.findOne({ user: req.user.id });
+    if (!cart) cart = await Cart.create({ user: req.user.id, items: [] });
+    res.json(cart.items);
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+// POST /api/cart (upsert)
+router.post('/', auth, async (req, res) => {
+  try {
+    const { _id, title, images, weight, currentPrice, quantity } = req.body;
+
+    if (!_id || !quantity) return res.status(400).json({ message: "Missing product or quantity" });
+
+    let cart = await Cart.findOne({ user: req.user.id });
+    if (!cart) cart = await Cart.create({ user: req.user.id, items: [] });
+
+    const index = cart.items.findIndex(item => item.productId.toString() === _id && item.weight?.value === weight?.value);
+
+    if (index !== -1) {
+      cart.items[index].quantity += quantity;
+    } else {
+      cart.items.push({
+        productId: _id,
+        title,
+        images,
+        weight,
+        currentPrice,
+        quantity,
+      });
+    }
+
+    await cart.save();
+    res.status(201).json(cart.items);
+  } catch (err) {
+    console.error("Add to cart error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+// DELETE /api/cart/:productId
+router.delete('/:productId', auth, async (req, res) => {
+  try {
+    const cart = await Cart.findOne({ user: req.user.id });
+    if (!cart) return res.status(404).json({ message: 'Cart not found' });
+
+    cart.items = cart.items.filter(item => item.productId.toString() !== req.params.productId);
+    await cart.save();
+    res.json(cart.items);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
 router.get('/all-products', async (req, res) => {
   try {
     const products = await Product.find();
@@ -61,9 +117,6 @@ router.get("/related/:id", async (req, res) => {
   }
 });
 
-/**
- * POST /api/products/upload-product
- */
 router.post('/upload-product', upload.array('images', 10), async (req, res) => {
   try {
     const { name, variants, description, details, keywords } = req.body;
