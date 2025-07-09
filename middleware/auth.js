@@ -1,7 +1,8 @@
 // File: middleware/auth.js
 import jwt from "jsonwebtoken";
+import User from "../models/User.js";
 
-const auth = (req, res, next) => {
+const auth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -12,9 +13,15 @@ const auth = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    const user = await User.findById(decoded.id || decoded.userId).select("id name");
+    if (!user) return res.status(401).json({ message: "User not found" });
+
     req.user = {
-      userId: decoded.userId
+      id: user._id,
+      name: user.name,
     };
+
     next();
   } catch (error) {
     return res.status(401).json({ message: "Invalid token" });

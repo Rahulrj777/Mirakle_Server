@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 
+// Variant Schema
 const variantSchema = new mongoose.Schema({
   size: { type: String },
   weight: {
@@ -9,6 +10,16 @@ const variantSchema = new mongoose.Schema({
   price: { type: Number },
 }, { _id: false });
 
+// ✅ Review Schema
+const reviewSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  name: { type: String, required: true },
+  rating: { type: Number, required: true },
+  comment: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+}, { _id: false });
+
+// ✅ Product Schema
 const productSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
@@ -27,6 +38,9 @@ const productSchema = new mongoose.Schema(
     details: { type: mongoose.Schema.Types.Mixed, default: {} },
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },
     keywords: { type: [String], default: [] },
+    
+    // ✅ Add this for reviews
+    reviews: [reviewSchema],
   },
   {
     timestamps: true,
