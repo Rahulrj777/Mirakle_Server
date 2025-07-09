@@ -1,11 +1,11 @@
  // File: routes/cartRoutes.js
  import express from 'express';
   import Cart from '../models/Cart.js';
-  import auth from '../middleware/auth.js';
+  import authMiddleware from '../middleware/auth.js';
 
   const router = express.Router();
 
-  router.get("/", auth, async (req, res) => {
+  router.get("/", authMiddleware, async (req, res) => {
     try {
       const userId = req.user.userId;
       const cart = await Cart.findOne({ userId });
@@ -15,7 +15,7 @@
     }
   });
 
-router.post('/', auth, async (req, res) => {
+router.post('/', authMiddleware, async (req, res) => {
   try {
     console.log("🛒 Incoming POST /cart/update");
     console.log("Headers:", req.headers);
@@ -43,7 +43,7 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-  router.delete("/", auth, async (req, res) => {
+  router.delete("/", authMiddleware, async (req, res) => {
     try {
       const userId = req.user.userId;
       await Cart.findOneAndDelete({ userId });

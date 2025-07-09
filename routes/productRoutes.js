@@ -3,8 +3,8 @@ import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import product from '../models/Product.js';
-import auth from '../middleware/auth.js';
+import Product from '../models/Product.js';
+import { verifyToken } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -30,16 +30,11 @@ router.get('/all-products', async (req, res) => {
 });
 
 router.get("/related/:id", async (req, res) => {
-  const { id } = req.params;
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ message: "Invalid product ID" });
-  }
-
   try {
-    const product = await Product.findById(id);
+    const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Product not found" });
 
-    const keywords = Array.isArray(product.keywords) ? product.keywords : [];
+    const keywords = product.keywords || [];
 
     let related = await Product.find({
       _id: { $ne: product._id },
@@ -62,7 +57,7 @@ router.get("/related/:id", async (req, res) => {
     res.json(related.slice(0, 10));
   } catch (error) {
     console.error("Failed to fetch related products:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -164,27 +159,30 @@ router.get("/search", async (req, res) => {
   }
 });
 
-// POST /api/products/:id/review
-router.post('/:id/review', auth, async (req, res) => {
-  const product = await Product.findById(req.params.id);
-  if (!product) return res.status(404).json({ message: 'Product not found' });
+router.post('/:id/review', verifyToken, async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
 
-  const alreadyReviewed = product.reviews.find(
-    (r) => r.user.toString() === req.user._id.toString()
-  );
-  if (alreadyReviewed) return res.status(400).json({ message: 'Already reviewed' });
+    const alreadyReviewed = product.reviews?.find(r => r.user.toString() === req.user.id);
+    if (alreadyReviewed) return res.status(400).json({ message: 'You already reviewed this product' });
 
-  const review = {
-    user: req.user._id,
-    rating: req.body.rating,
-    comment: req.body.comment,
-    createdAt: new Date(),
-  };
+    const newReview = {
+      user: req.user.id,
+      rating: Number(req.body.rating),
+      comment: req.body.comment,
+      createdAt: new Date(),
+    };
 
-  product.reviews.push(review);
-  await product.save();
+    product.reviews = product.reviews || [];
+    product.reviews.push(newReview);
+    await product.save();
 
-  res.status(201).json({ message: 'Review added' });
+    res.status(201).json({ message: 'Review added' });
+  } catch (err) {
+    console.error('Review error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
 });
 
 /**
@@ -226,6 +224,7 @@ router.put('/:id', upload.array('images', 10), async (req, res) => {
     }
 
     const newImages = req.files.map(file => `/${uploadDir}/${file.filename}`);
+
     if (removedImages) {
       try {
         const removed = JSON.parse(removedImages);
