@@ -38,9 +38,9 @@ const productSchema = new mongoose.Schema(
     details: { type: mongoose.Schema.Types.Mixed, default: {} },
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },
     keywords: { type: [String], default: [] },
-    
-    // ✅ Add this for reviews
-    reviews: [reviewSchema],
+    likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    dislikes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+        reviews: [reviewSchema],
   },
   {
     timestamps: true,
