@@ -37,7 +37,7 @@ const productSchema = new mongoose.Schema(
     keywords: { type: [String], default: [] },
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     dislikes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-        reviews: [reviewSchema],
+    reviews: [reviewSchema],
   },
   {
     timestamps: true,
