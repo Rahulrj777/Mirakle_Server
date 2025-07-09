@@ -38,8 +38,6 @@ router.get("/test", (req, res) => {
 
 // GET all banners - SIMPLIFIED with error handling
 router.get("/", async (req, res) => {
-  console.log("🔥 GET BANNERS REQUEST")
-
   try {
     // Simple find without populate first
     const banners = await Banner.find()

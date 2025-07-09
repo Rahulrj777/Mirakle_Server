@@ -33,6 +33,16 @@
         cart.items.push(item);
       }
     }
+    
+    router.get("/cart", verifyToken, async (req, res) => {
+      try {
+        const userId = req.user.id;
+        const cart = await Cart.findOne({ user: userId });
+        res.status(200).json(cart?.items || []);
+      } catch (err) {
+        res.status(500).json({ message: "Failed to fetch cart" });
+      }
+    });
 
     await cart.save();
     res.status(200).json(cart);
