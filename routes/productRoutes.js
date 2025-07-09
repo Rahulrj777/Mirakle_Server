@@ -4,7 +4,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import Product from '../models/Product.js';
-import auth from '../middleware/auth.js';
+import { verifyToken } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -159,7 +159,7 @@ router.get("/search", async (req, res) => {
   }
 });
 
-router.post('/:id/review', auth, async (req, res) => {
+router.post('/:id/review', verifyToken, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
