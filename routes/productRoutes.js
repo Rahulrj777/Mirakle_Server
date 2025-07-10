@@ -463,6 +463,31 @@ router.put("/:id", upload.array("images", 10), async (req, res) => {
   }
 })
 
+// Add this route temporarily for debugging
+router.get("/:id/debug-reviews", async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id)
+    if (!product) return res.status(404).json({ message: "Product not found" })
+    
+    console.log("🔍 Debug - All reviews for product:", req.params.id)
+    product.reviews.forEach((review, index) => {
+      console.log(`Review ${index}:`, {
+        _id: review._id,
+        user: review.user,
+        hasLikes: !!review.likes,
+        hasDisikes: !!review.dislikes,
+        likesCount: review.likes?.length || 0,
+        dislikesCount: review.dislikes?.length || 0
+      })
+    })
+    
+    res.json({ reviews: product.reviews })
+  } catch (err) {
+    console.error("Debug error:", err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ✅ PUT toggle stock status
 router.put("/:id/toggle-stock", async (req, res) => {
   try {
