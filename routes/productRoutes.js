@@ -4,8 +4,6 @@ import fs from "fs"
 import path from "path"
 import Product from "../models/Product.js"
 import auth from "../middleware/auth.js"
-import { verifyToken } from "../middleware/verifyToken.js"
-import { likeReview, dislikeReview } from "../controllers/productController.js"
 
 const router = express.Router()
 
@@ -19,7 +17,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage })
 
-// Add review image upload configuration after the existing upload setup
+// Add review image upload configuration
 const reviewUploadDir = "uploads/reviews"
 if (!fs.existsSync(reviewUploadDir)) fs.mkdirSync(reviewUploadDir, { recursive: true })
 
@@ -40,6 +38,7 @@ const reviewUpload = multer({
   },
 })
 
+// ✅ GET all products
 router.get("/all-products", async (req, res) => {
   try {
     const products = await Product.find()
@@ -49,6 +48,7 @@ router.get("/all-products", async (req, res) => {
   }
 })
 
+// ✅ GET related products
 router.get("/related/:id", async (req, res) => {
   try {
     const product = await Product.findById(req.params.id)
@@ -79,6 +79,7 @@ router.get("/related/:id", async (req, res) => {
   }
 })
 
+// ✅ POST upload product
 router.post("/upload-product", upload.array("images", 10), async (req, res) => {
   try {
     const { name, variants, description, details, keywords } = req.body
@@ -117,6 +118,7 @@ router.post("/upload-product", upload.array("images", 10), async (req, res) => {
   }
 })
 
+// ✅ GET search products
 router.get("/search", async (req, res) => {
   const query = req.query.query || ""
   try {
@@ -172,10 +174,12 @@ router.get("/search", async (req, res) => {
   }
 })
 
-// Replace the existing review submission route with this enhanced version
+// ✅ POST submit a review (with image upload)
 router.post("/:id/review", auth, reviewUpload.array("images", 5), async (req, res) => {
   try {
     const { rating, comment } = req.body
+
+    console.log("Review submission:", { productId: req.params.id, userId: req.user.id, rating, comment })
 
     if (!rating || !comment) {
       return res.status(400).json({ message: "Rating and comment are required" })
@@ -213,12 +217,12 @@ router.post("/:id/review", auth, reviewUpload.array("images", 5), async (req, re
     product.reviews.push(newReview)
     await product.save()
 
-    // Return the updated product with populated reviews
-    const updatedProduct = await Product.findById(req.params.id)
+    console.log("Review added successfully:", newReview._id)
+
     res.status(201).json({
       message: "Review submitted successfully",
       review: newReview,
-      reviews: updatedProduct.reviews,
+      reviews: product.reviews,
     })
   } catch (err) {
     console.error("Review error:", err)
@@ -226,11 +230,13 @@ router.post("/:id/review", auth, reviewUpload.array("images", 5), async (req, re
   }
 })
 
-// Update the delete review route to also delete images
+// ✅ DELETE a review
 router.delete("/:id/review/:reviewId", auth, async (req, res) => {
   try {
     const { id: productId, reviewId } = req.params
     const userId = req.user.id
+
+    console.log("Delete review request:", { productId, reviewId, userId })
 
     const product = await Product.findById(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
@@ -238,6 +244,11 @@ router.delete("/:id/review/:reviewId", auth, async (req, res) => {
     const reviewIndex = product.reviews.findIndex((r) => r._id.toString() === reviewId && r.user.toString() === userId)
 
     if (reviewIndex === -1) {
+      console.log("Review not found or unauthorized:", {
+        reviewId,
+        userId,
+        existingReviews: product.reviews.map((r) => ({ id: r._id.toString(), user: r.user.toString() })),
+      })
       return res.status(404).json({ message: "Review not found or unauthorized" })
     }
 
@@ -256,6 +267,7 @@ router.delete("/:id/review/:reviewId", auth, async (req, res) => {
     product.reviews.splice(reviewIndex, 1)
     await product.save()
 
+    console.log("Review deleted successfully")
     res.json({ message: "Review deleted successfully" })
   } catch (err) {
     console.error("Delete review error:", err)
@@ -263,6 +275,123 @@ router.delete("/:id/review/:reviewId", auth, async (req, res) => {
   }
 })
 
+// ✅ POST like a review
+router.post("/:productId/review/:reviewId/like", auth, async (req, res) => {
+  try {
+    const { productId, reviewId } = req.params
+    const userId = req.user.id
+
+    console.log("Like request:", { productId, reviewId, userId })
+
+    const product = await Product.findById(productId)
+    if (!product) return res.status(404).json({ message: "Product not found" })
+
+    const review = product.reviews.id(reviewId)
+    if (!review) {
+      console.log("Review not found:", {
+        reviewId,
+        existingReviews: product.reviews.map((r) => r._id.toString()),
+      })
+      return res.status(404).json({ message: "Review not found" })
+    }
+
+    // Initialize arrays if they don't exist
+    if (!review.likes) review.likes = []
+    if (!review.dislikes) review.dislikes = []
+
+    const hasLiked = review.likes.includes(userId)
+    const hasDisliked = review.dislikes.includes(userId)
+
+    if (hasLiked) {
+      // Remove like
+      review.likes.pull(userId)
+    } else {
+      // Add like and remove dislike if exists
+      if (hasDisliked) {
+        review.dislikes.pull(userId)
+      }
+      review.likes.push(userId)
+    }
+
+    await product.save()
+
+    console.log("Like action completed:", { hasLiked: !hasLiked, likes: review.likes.length })
+
+    res.status(200).json({
+      message: hasLiked ? "Like removed" : "Review liked",
+      review: {
+        _id: review._id,
+        likes: review.likes.length,
+        dislikes: review.dislikes.length,
+        userLiked: review.likes.includes(userId),
+        userDisliked: review.dislikes.includes(userId),
+      },
+    })
+  } catch (err) {
+    console.error("Like Review Error:", err)
+    res.status(500).json({ message: "Something went wrong" })
+  }
+})
+
+// ✅ POST dislike a review
+router.post("/:productId/review/:reviewId/dislike", auth, async (req, res) => {
+  try {
+    const { productId, reviewId } = req.params
+    const userId = req.user.id
+
+    console.log("Dislike request:", { productId, reviewId, userId })
+
+    const product = await Product.findById(productId)
+    if (!product) return res.status(404).json({ message: "Product not found" })
+
+    const review = product.reviews.id(reviewId)
+    if (!review) {
+      console.log("Review not found:", {
+        reviewId,
+        existingReviews: product.reviews.map((r) => r._id.toString()),
+      })
+      return res.status(404).json({ message: "Review not found" })
+    }
+
+    // Initialize arrays if they don't exist
+    if (!review.likes) review.likes = []
+    if (!review.dislikes) review.dislikes = []
+
+    const hasLiked = review.likes.includes(userId)
+    const hasDisliked = review.dislikes.includes(userId)
+
+    if (hasDisliked) {
+      // Remove dislike
+      review.dislikes.pull(userId)
+    } else {
+      // Add dislike and remove like if exists
+      if (hasLiked) {
+        review.likes.pull(userId)
+      }
+      review.dislikes.push(userId)
+    }
+
+    await product.save()
+
+    console.log("Dislike action completed:", { hasDisliked: !hasDisliked, dislikes: review.dislikes.length })
+
+    res.status(200).json({
+      message: hasDisliked ? "Dislike removed" : "Review disliked",
+      review: {
+        _id: review._id,
+        likes: review.likes.length,
+        dislikes: review.dislikes.length,
+        userLiked: review.likes.includes(userId),
+        userDisliked: review.dislikes.includes(userId),
+      },
+    })
+  } catch (err) {
+    console.error("Dislike Review Error:", err)
+    res.status(500).json({ message: "Something went wrong" })
+  }
+})
+
+// ✅ PUT update product
 router.put("/:id", upload.array("images", 10), async (req, res) => {
   try {
     const { name, variants, description, details, removedImages, keywords } = req.body
@@ -325,6 +454,7 @@ router.put("/:id", upload.array("images", 10), async (req, res) => {
   }
 })
 
+// ✅ PUT toggle stock status
 router.put("/:id/toggle-stock", async (req, res) => {
   try {
     const { isOutOfStock } = req.body
@@ -335,6 +465,7 @@ router.put("/:id/toggle-stock", async (req, res) => {
   }
 })
 
+// ✅ DELETE product
 router.delete("/:id", async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id)
@@ -350,201 +481,6 @@ router.delete("/:id", async (req, res) => {
     res.json({ message: "Product deleted" })
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message })
-  }
-})
-
-// ✅ Like and Dislike routes
-router.post("/:productId/review/:reviewId/like", verifyToken, likeReview)
-router.post("/:productId/review/:reviewId/dislike", verifyToken, dislikeReview)
-
-// ✅ Submit a review (with image upload)
-router.post("/:id/review", auth, reviewUpload.array("images", 5), async (req, res) => {
-  try {
-    const { rating, comment } = req.body
-
-    if (!rating || !comment) {
-      return res.status(400).json({ message: "Rating and comment are required" })
-    }
-
-    if (rating < 1 || rating > 5) {
-      return res.status(400).json({ message: "Rating must be between 1 and 5" })
-    }
-
-    const product = await Product.findById(req.params.id)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-
-    // Check if user already reviewed
-    const existingReviewIndex = product.reviews.findIndex((r) => r.user.toString() === req.user.id)
-
-    if (existingReviewIndex !== -1) {
-      return res.status(400).json({ message: "You have already reviewed this product. You can only review once." })
-    }
-
-    // Process uploaded images
-    const reviewImages = req.files ? req.files.map((file) => `/${reviewUploadDir}/${file.filename}`) : []
-
-    // Create new review
-    const newReview = {
-      user: req.user.id,
-      name: req.user.name || "User",
-      rating: Number(rating),
-      comment: comment.trim(),
-      images: reviewImages,
-      likes: [],
-      dislikes: [],
-      createdAt: new Date(),
-    }
-
-    product.reviews.push(newReview)
-    await product.save()
-
-    // Return the updated product with populated reviews
-    const updatedProduct = await Product.findById(req.params.id)
-    res.status(201).json({
-      message: "Review submitted successfully",
-      review: newReview,
-      reviews: updatedProduct.reviews,
-    })
-  } catch (err) {
-    console.error("Review error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
-  }
-})
-
-// ✅ Delete a review
-router.delete("/:id/review/:reviewId", auth, async (req, res) => {
-  try {
-    const { id: productId, reviewId } = req.params
-    const userId = req.user.id
-
-    const product = await Product.findById(productId)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-
-    const reviewIndex = product.reviews.findIndex((r) => r._id.toString() === reviewId && r.user.toString() === userId)
-
-    if (reviewIndex === -1) {
-      return res.status(404).json({ message: "Review not found or unauthorized" })
-    }
-
-    const review = product.reviews[reviewIndex]
-
-    // Delete review images from filesystem
-    if (review.images && review.images.length > 0) {
-      review.images.forEach((imagePath) => {
-        const fullPath = path.join(process.cwd(), imagePath.replace(/^\//, ""))
-        if (fs.existsSync(fullPath)) {
-          fs.unlinkSync(fullPath)
-        }
-      })
-    }
-
-    product.reviews.splice(reviewIndex, 1)
-    await product.save()
-
-    res.json({ message: "Review deleted successfully" })
-  } catch (err) {
-    console.error("Delete review error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
-  }
-})
-
-// ✅ Like a review
-router.post("/:productId/review/:reviewId/like", auth, async (req, res) => {
-  try {
-    const { productId, reviewId } = req.params
-    const userId = req.user.id
-
-    console.log("Like request:", { productId, reviewId, userId })
-
-    const product = await Product.findById(productId)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-
-    const review = product.reviews.id(reviewId)
-    if (!review) return res.status(404).json({ message: "Review not found" })
-
-    // Initialize arrays if they don't exist
-    if (!review.likes) review.likes = []
-    if (!review.dislikes) review.dislikes = []
-
-    const hasLiked = review.likes.includes(userId)
-    const hasDisliked = review.dislikes.includes(userId)
-
-    if (hasLiked) {
-      // Remove like
-      review.likes.pull(userId)
-    } else {
-      // Add like and remove dislike if exists
-      if (hasDisliked) {
-        review.dislikes.pull(userId)
-      }
-      review.likes.push(userId)
-    }
-
-    await product.save()
-
-    res.status(200).json({
-      message: hasLiked ? "Like removed" : "Review liked",
-      review: {
-        _id: review._id,
-        likes: review.likes.length,
-        dislikes: review.dislikes.length,
-        userLiked: review.likes.includes(userId),
-        userDisliked: review.dislikes.includes(userId),
-      },
-    })
-  } catch (err) {
-    console.error("Like Review Error:", err)
-    res.status(500).json({ message: "Something went wrong" })
-  }
-})
-
-// ✅ Dislike a review
-router.post("/:productId/review/:reviewId/dislike", auth, async (req, res) => {
-  try {
-    const { productId, reviewId } = req.params
-    const userId = req.user.id
-
-    console.log("Dislike request:", { productId, reviewId, userId })
-
-    const product = await Product.findById(productId)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-
-    const review = product.reviews.id(reviewId)
-    if (!review) return res.status(404).json({ message: "Review not found" })
-
-    // Initialize arrays if they don't exist
-    if (!review.likes) review.likes = []
-    if (!review.dislikes) review.dislikes = []
-
-    const hasLiked = review.likes.includes(userId)
-    const hasDisliked = review.dislikes.includes(userId)
-
-    if (hasDisliked) {
-      // Remove dislike
-      review.dislikes.pull(userId)
-    } else {
-      // Add dislike and remove like if exists
-      if (hasLiked) {
-        review.likes.pull(userId)
-      }
-      review.dislikes.push(userId)
-    }
-
-    await product.save()
-
-    res.status(200).json({
-      message: hasDisliked ? "Dislike removed" : "Review disliked",
-      review: {
-        _id: review._id,
-        likes: review.likes.length,
-        dislikes: review.dislikes.length,
-        userLiked: review.likes.includes(userId),
-        userDisliked: review.dislikes.includes(userId),
-      },
-    })
-  } catch (err) {
-    console.error("Dislike Review Error:", err)
-    res.status(500).json({ message: "Something went wrong" })
   }
 })
 
