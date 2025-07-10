@@ -2,11 +2,10 @@ import express from 'express';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import productRoutes from './routes/productRoutes.js';
-import userRoutes from './routes/userRoutes.js';
-import cartRoutes from "./routes/cartRoutes.js";
-import bannerRoutes from "./routes/bannerRoutes.js";
-
+import productRoutes from "./routes/productRoutes.js"
+import userRoutes from "./routes/userRoutes.js"
+import cartRoutes from "./routes/cartRoutes.js"
+import bannerRoutes from "./routes/bannerRoutes.js"
 dotenv.config();
 
 const app = express();
@@ -28,6 +27,11 @@ const corsOptions = {
   credentials: true,
 };
 
+app.use("/api/products", productRoutes)
+app.use("/api", userRoutes)
+app.use("/api/cart", cartRoutes)
+app.use("/api/banner", bannerRoutes)
+
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
@@ -37,13 +41,18 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use("/api/products", productRoutes);
-app.use("/api", userRoutes);
-app.use("/api/cart", cartRoutes);
-app.use("/api/banner", bannerRoutes);
+// Test userRoutes first
+console.log("🔍 Loading userRoutes...");
+try {
+  const userRoutes = await import('./routes/userRoutes.js');
+  app.use("/api", userRoutes.default);
+  console.log("✅ userRoutes loaded successfully");
+} catch (error) {
+  console.error("❌ Error loading userRoutes:", error.message);
+}
 
 app.get("/", (req, res) => {
-  res.send("Mirakle Server is Running");
+  res.send("Mirakle Server is Running - Testing userRoutes only");
 });
 
 mongoose.connect(process.env.MONGO_URI)
