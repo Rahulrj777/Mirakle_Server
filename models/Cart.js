@@ -2,7 +2,7 @@
 import mongoose from "mongoose";
 
 const itemSchema = new mongoose.Schema({
-  productId: mongoose.Schema.Types.ObjectId,
+  productId:mongoose.Schema.Types.ObjectId,
   title: String,
   images: Object,
   weight: {
@@ -10,25 +10,16 @@ const itemSchema = new mongoose.Schema({
     unit: String,
   },
   currentPrice: Number,
-  quantity: { type: Number, required: true, min: 1 },
-}, { _id: false });
+  quantity: Number,
+});
 
 const cartSchema = new mongoose.Schema({
-  user: { 
+  userId: {
     type: mongoose.Schema.Types.ObjectId,
     required: true,
     ref: "User",
-    unique: true
   },
   items: [itemSchema],
-}, {
-  timestamps: true,
-  toJSON: { virtuals: true }, 
-  toObject: { virtuals: true }  
-});
-
-cartSchema.virtual('totalPrice').get(function () {
-  return this.items.reduce((total, item) => total + item.currentPrice * item.quantity, 0);
-});
+}, { timestamps: true });
 
 export default mongoose.model("Cart", cartSchema);
