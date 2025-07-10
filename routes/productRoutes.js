@@ -19,6 +19,27 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage })
 
+// Add review image upload configuration after the existing upload setup
+const reviewUploadDir = "uploads/reviews"
+if (!fs.existsSync(reviewUploadDir)) fs.mkdirSync(reviewUploadDir, { recursive: true })
+
+const reviewStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, reviewUploadDir),
+  filename: (req, file, cb) => cb(null, Date.now() + "-review-" + file.originalname),
+})
+
+const reviewUpload = multer({
+  storage: reviewStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true)
+    } else {
+      cb(new Error("Only image files are allowed"), false)
+    }
+  },
+})
+
 router.get("/all-products", async (req, res) => {
   try {
     const products = await Product.find()
@@ -151,8 +172,8 @@ router.get("/search", async (req, res) => {
   }
 })
 
-// ✅ FIXED: Review submission route
-router.post("/:id/review", auth, async (req, res) => {
+// Replace the existing review submission route with this enhanced version
+router.post("/:id/review", auth, reviewUpload.array("images", 5), async (req, res) => {
   try {
     const { rating, comment } = req.body
 
@@ -171,30 +192,32 @@ router.post("/:id/review", auth, async (req, res) => {
     const existingReviewIndex = product.reviews.findIndex((r) => r.user.toString() === req.user.id)
 
     if (existingReviewIndex !== -1) {
-      // Update existing review
-      product.reviews[existingReviewIndex].rating = Number(rating)
-      product.reviews[existingReviewIndex].comment = comment.trim()
-      product.reviews[existingReviewIndex].createdAt = new Date()
-    } else {
-      // Create new review
-      const newReview = {
-        user: req.user.id,
-        name: req.user.name || "User",
-        rating: Number(rating),
-        comment: comment.trim(),
-        likes: [],
-        dislikes: [],
-        createdAt: new Date(),
-      }
-      product.reviews.push(newReview)
+      return res.status(400).json({ message: "You have already reviewed this product. You can only review once." })
     }
 
+    // Process uploaded images
+    const reviewImages = req.files ? req.files.map((file) => `/${reviewUploadDir}/${file.filename}`) : []
+
+    // Create new review
+    const newReview = {
+      user: req.user.id,
+      name: req.user.name || "User",
+      rating: Number(rating),
+      comment: comment.trim(),
+      images: reviewImages,
+      likes: [],
+      dislikes: [],
+      createdAt: new Date(),
+    }
+
+    product.reviews.push(newReview)
     await product.save()
 
     // Return the updated product with populated reviews
     const updatedProduct = await Product.findById(req.params.id)
     res.status(201).json({
       message: "Review submitted successfully",
+      review: newReview,
       reviews: updatedProduct.reviews,
     })
   } catch (err) {
@@ -203,7 +226,7 @@ router.post("/:id/review", auth, async (req, res) => {
   }
 })
 
-// ✅ FIXED: Delete review route
+// Update the delete review route to also delete images
 router.delete("/:id/review/:reviewId", auth, async (req, res) => {
   try {
     const { id: productId, reviewId } = req.params
@@ -216,6 +239,18 @@ router.delete("/:id/review/:reviewId", auth, async (req, res) => {
 
     if (reviewIndex === -1) {
       return res.status(404).json({ message: "Review not found or unauthorized" })
+    }
+
+    const review = product.reviews[reviewIndex]
+
+    // Delete review images from filesystem
+    if (review.images && review.images.length > 0) {
+      review.images.forEach((imagePath) => {
+        const fullPath = path.join(process.cwd(), imagePath.replace(/^\//, ""))
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath)
+        }
+      })
     }
 
     product.reviews.splice(reviewIndex, 1)
@@ -318,7 +353,6 @@ router.delete("/:id", async (req, res) => {
   }
 })
 
-// ✅ Like and Dislike routes
 router.post("/:productId/review/:reviewId/like", verifyToken, likeReview)
 router.post("/:productId/review/:reviewId/dislike", verifyToken, dislikeReview)
 

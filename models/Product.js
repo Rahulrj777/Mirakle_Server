@@ -13,14 +13,16 @@ const variantSchema = new mongoose.Schema(
   { _id: true },
 ) // Enable _id for variants
 
+// Update the reviewSchema to include images field
 const reviewSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     name: { type: String, required: true },
     rating: { type: Number, required: true, min: 1, max: 5 },
     comment: { type: String, required: true },
-    likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // Add likes array
-    dislikes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // Add dislikes array
+    images: [{ type: String }], // Add images array for review photos
+    likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    dislikes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     createdAt: { type: Date, default: Date.now },
   },
   { _id: true },
