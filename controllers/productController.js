@@ -1,5 +1,4 @@
 // controllers/productController.js
-
 import Product from '../models/Product.js';
 
 export const likeReview = async (req, res) => {

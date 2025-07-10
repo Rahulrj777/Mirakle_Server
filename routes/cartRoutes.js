@@ -17,40 +17,30 @@
   });
 
   router.post('/add', verifyToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { item } = req.body;
+    try {
+      const userId = req.user.id;
+      const { item } = req.body;
 
-    let cart = await Cart.findOne({ user: userId });
+      let cart = await Cart.findOne({ userId });
 
-    if (!cart) {
-      cart = new Cart({ user: userId, items: [item] });
-    } else {
-      const existingItem = cart.items.find(i => i._id.toString() === item._id);
-      if (existingItem) {
-        existingItem.quantity += 1;
+      if (!cart) {
+        cart = new Cart({ userId, items: [item] });
       } else {
-        cart.items.push(item);
+        const existingIndex = cart.items.findIndex(i => i._id.toString() === item._id);
+        if (existingIndex > -1) {
+          cart.items[existingIndex].quantity += item.quantity || 1;
+        } else {
+          cart.items.push(item);
+        }
       }
-    }
-    
-    router.get("/cart", verifyToken, async (req, res) => {
-      try {
-        const userId = req.user.id;
-        const cart = await Cart.findOne({ user: userId });
-        res.status(200).json(cart?.items || []);
-      } catch (err) {
-        res.status(500).json({ message: "Failed to fetch cart" });
-      }
-    });
 
-    await cart.save();
-    res.status(200).json(cart);
-  } catch (err) {
-    console.error("Cart add error:", err);
-    res.status(500).json({ message: "Failed to add to cart" });
-  }
-});
+      await cart.save();
+      res.status(200).json(cart.items);
+    } catch (err) {
+      console.error("Cart add error:", err);
+      res.status(500).json({ message: "Failed to add to cart" });
+    }
+  });
 
 router.post('/', auth, async (req, res) => {
   try {
