@@ -8,7 +8,7 @@
 
   router.get("/", auth, async (req, res) => {
     try {
-      const userId = req.user.userId;
+      const userId = req.user.id;
       const cart = await Cart.findOne({ userId });
       res.json(cart?.items || []);
     } catch (error) {
@@ -44,7 +44,7 @@
 
 router.post('/', auth, async (req, res) => {
   try {
-    const userId = req.user.userId;
+    const userId = req.user.id;
     const items = req.body.items;
 
     if (!items || !Array.isArray(items)) {
@@ -68,7 +68,7 @@ router.post('/', auth, async (req, res) => {
 
   router.delete("/", auth, async (req, res) => {
     try {
-      const userId = req.user.userId;
+      const userId = req.user.id;
       await Cart.findOneAndDelete({ userId });
       res.json({ message: "Cart cleared" });
     } catch (error) {
