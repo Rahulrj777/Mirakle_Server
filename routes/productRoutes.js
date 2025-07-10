@@ -179,7 +179,14 @@ router.post("/:id/review", auth, reviewUpload.array("images", 5), async (req, re
   try {
     const { rating, comment } = req.body
 
-    console.log("Review submission:", { productId: req.params.id, userId: req.user.id, rating, comment })
+    console.log("Review submission:", {
+      productId: req.params.id,
+      userId: req.user.id,
+      userName: req.user.name,
+      rating,
+      comment,
+      userObject: req.user,
+    })
 
     if (!rating || !comment) {
       return res.status(400).json({ message: "Rating and comment are required" })
@@ -202,10 +209,10 @@ router.post("/:id/review", auth, reviewUpload.array("images", 5), async (req, re
     // Process uploaded images
     const reviewImages = req.files ? req.files.map((file) => `/${reviewUploadDir}/${file.filename}`) : []
 
-    // Create new review
+    // Create new review with proper user field
     const newReview = {
-      user: req.user.id,
-      name: req.user.name || "User",
+      user: req.user.id, // Make sure this is set
+      name: req.user.name || req.user.email || "User",
       rating: Number(rating),
       comment: comment.trim(),
       images: reviewImages,
@@ -213,6 +220,8 @@ router.post("/:id/review", auth, reviewUpload.array("images", 5), async (req, re
       dislikes: [],
       createdAt: new Date(),
     }
+
+    console.log("Creating review with data:", newReview)
 
     product.reviews.push(newReview)
     await product.save()
