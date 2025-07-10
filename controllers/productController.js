@@ -1,52 +1,99 @@
-// controllers/productController.js
-import Product from '../models/Product.js';
+import Product from "../models/Product.js"
 
 export const likeReview = async (req, res) => {
   try {
-    const { productId, reviewId } = req.params;
-    const userId = req.user.id;
+    const { productId, reviewId } = req.params
+    const userId = req.user.id
 
-    const product = await Product.findById(productId);
-    const review = product.reviews.id(reviewId);
+    console.log("Like request:", { productId, reviewId, userId })
 
-    if (!review) return res.status(404).json({ message: "Review not found" });
+    const product = await Product.findById(productId)
+    if (!product) return res.status(404).json({ message: "Product not found" })
 
-    if (review.likes.includes(userId)) {
-      review.likes.pull(userId); // Unlike
+    const review = product.reviews.id(reviewId)
+    if (!review) return res.status(404).json({ message: "Review not found" })
+
+    // Initialize arrays if they don't exist
+    if (!review.likes) review.likes = []
+    if (!review.dislikes) review.dislikes = []
+
+    const hasLiked = review.likes.includes(userId)
+    const hasDisliked = review.dislikes.includes(userId)
+
+    if (hasLiked) {
+      // Remove like
+      review.likes.pull(userId)
     } else {
-      review.dislikes.pull(userId);
-      review.likes.push(userId);
+      // Add like and remove dislike if exists
+      if (hasDisliked) {
+        review.dislikes.pull(userId)
+      }
+      review.likes.push(userId)
     }
 
-    await product.save();
-    res.status(200).json({ message: "Liked/unliked", review });
+    await product.save()
+
+    res.status(200).json({
+      message: hasLiked ? "Like removed" : "Review liked",
+      review: {
+        _id: review._id,
+        likes: review.likes.length,
+        dislikes: review.dislikes.length,
+        userLiked: review.likes.includes(userId),
+        userDisliked: review.dislikes.includes(userId),
+      },
+    })
   } catch (err) {
-    console.error("Like Review Error:", err);
-    res.status(500).json({ message: "Something went wrong" });
+    console.error("Like Review Error:", err)
+    res.status(500).json({ message: "Something went wrong" })
   }
-};
+}
 
 export const dislikeReview = async (req, res) => {
   try {
-    const { productId, reviewId } = req.params;
-    const userId = req.user.id;
+    const { productId, reviewId } = req.params
+    const userId = req.user.id
 
-    const product = await Product.findById(productId);
-    const review = product.reviews.id(reviewId);
+    console.log("Dislike request:", { productId, reviewId, userId })
 
-    if (!review) return res.status(404).json({ message: "Review not found" });
+    const product = await Product.findById(productId)
+    if (!product) return res.status(404).json({ message: "Product not found" })
 
-    if (review.dislikes.includes(userId)) {
-      review.dislikes.pull(userId);
+    const review = product.reviews.id(reviewId)
+    if (!review) return res.status(404).json({ message: "Review not found" })
+
+    // Initialize arrays if they don't exist
+    if (!review.likes) review.likes = []
+    if (!review.dislikes) review.dislikes = []
+
+    const hasLiked = review.likes.includes(userId)
+    const hasDisliked = review.dislikes.includes(userId)
+
+    if (hasDisliked) {
+      // Remove dislike
+      review.dislikes.pull(userId)
     } else {
-      review.likes.pull(userId);
-      review.dislikes.push(userId);
+      // Add dislike and remove like if exists
+      if (hasLiked) {
+        review.likes.pull(userId)
+      }
+      review.dislikes.push(userId)
     }
 
-    await product.save();
-    res.status(200).json({ message: "Disliked/undisliked", review });
+    await product.save()
+
+    res.status(200).json({
+      message: hasDisliked ? "Dislike removed" : "Review disliked",
+      review: {
+        _id: review._id,
+        likes: review.likes.length,
+        dislikes: review.dislikes.length,
+        userLiked: review.likes.includes(userId),
+        userDisliked: review.dislikes.includes(userId),
+      },
+    })
   } catch (err) {
-    console.error("Dislike Review Error:", err);
-    res.status(500).json({ message: "Something went wrong" });
+    console.error("Dislike Review Error:", err)
+    res.status(500).json({ message: "Something went wrong" })
   }
-};
+}
