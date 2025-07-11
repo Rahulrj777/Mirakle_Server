@@ -1,44 +1,50 @@
-import express from "express"
-import mongoose from "mongoose"
-import dotenv from "dotenv"
-import cors from "cors"
+import express from 'express';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+import cors from 'cors';
+import productRoutes from './routes/productRoutes.js';
+import userRoutes from './routes/userRoutes.js';
+import cartRoutes from "./routes/cartRoutes.js";
+import bannerRoutes from "./routes/bannerRoutes.js";
 
-dotenv.config()
+dotenv.config();
 
-const app = express()
+const app = express();
 
 const allowedOrigins = [
   "https://mirakle-website-m1xp.vercel.app",
-  "https://mirakle-client.vercel.app",
+  "https://mirakle-client.vercel.app", 
   "https://mirakle-admin.vercel.app",
-  "http://localhost:3000",
-  "http://localhost:5173",
-]
+];
 
 const corsOptions = {
-  origin: (origin, callback) => {
+  origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true)
+      callback(null, true);
     } else {
-      callback(new Error("CORS not allowed for this origin: " + origin))
+      callback(new Error("CORS not allowed for this origin: " + origin));
     }
   },
   credentials: true,
-}
+};
 
-app.use(cors(corsOptions))
+app.use(cors(corsOptions));
 app.use(express.json({ limit: "10mb" }))
 app.use(express.urlencoded({ extended: true, limit: "10mb" }))
-app.use("/uploads", express.static("uploads"))
 
-// Enhanced logging
 app.use((req, res, next) => {
   console.log(`📥 ${new Date().toISOString()} - ${req.method} ${req.url}`)
-  next()
-})
+  next();
+});
 
-// Load routes safely
-console.log("🔍 Loading routes...")
+app.use("/api/products", productRoutes);
+app.use("/api", userRoutes);
+app.use("/api/cart", cartRoutes);
+app.use("/api/banner", bannerRoutes);
+
+app.get("/", (req, res) => {
+  res.send("Mirakle Server is Running");
+});
 
 // Load userRoutes
 try {
@@ -105,39 +111,9 @@ app.use((err, req, res, next) => {
   })
 })
 
-// 404 handler
-app.use("*", (req, res) => {
-  console.log("❌ 404 - Route not found:", req.method, req.originalUrl)
-  res.status(404).json({
-    message: "Route not found",
-    requestedUrl: req.originalUrl,
-    method: req.method,
-  })
-})
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB connected"))
+  .catch(err => console.error("MongoDB connection error:", err));
 
-// MongoDB connection
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log("✅ MongoDB connected successfully")
-  })
-  .catch((err) => {
-    console.error("❌ MongoDB connection error:", err)
-    process.exit(1)
-  })
-
-const PORT = process.env.PORT || 7000
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`)
-  console.log(`📝 API Base URL: http://localhost:${PORT}`)
-  console.log(`📋 Available endpoints:`)
-  console.log(`   GET    /api/products/all-products`)
-  console.log(`   POST   /api/products/:id/review`)
-  console.log(`   GET    /api/banners`)
-  console.log(`   POST   /api/login`)
-  console.log(`   POST   /api/signup`)
-  console.log(`   GET    /api/cart`)
-})
-
-export default app
+const PORT = process.env.PORT || 7000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
