@@ -21,13 +21,11 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 })
 
-// ✅ Debug middleware
 router.use((req, res, next) => {
   console.log(`🔥 BANNER ROUTE: ${req.method} ${req.path}`)
   next()
 })
 
-// ✅ Test route
 router.get("/test", (req, res) => {
   console.log("✅ Banner test route hit")
   res.json({
@@ -36,7 +34,44 @@ router.get("/test", (req, res) => {
   })
 })
 
-// ✅ GET all banners - This is the main route your frontend needs
+router.put("/edit/:id", upload.single("image"), async (req, res) => {
+  try {
+    const existingBanner = await Banner.findById(req.params.id);
+
+    if (!existingBanner) {
+      return res.status(404).json({ message: "Banner not found" });
+    }
+
+    const { title, type, price, oldPrice, discountPercent } = req.body;
+
+    if (req.file) {
+      // Delete old image if not product-type
+      if (
+        existingBanner.type !== "product-type" &&
+        existingBanner.type !== "side" &&
+        existingBanner.imageUrl
+      ) {
+        const filePath = path.join("uploads", path.basename(existingBanner.imageUrl));
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      }
+
+      existingBanner.imageUrl = `/${uploadDir}/${req.file.filename}`;
+    }
+
+    existingBanner.title = title || existingBanner.title;
+    existingBanner.type = type || existingBanner.type;
+    existingBanner.price = price || existingBanner.price;
+    existingBanner.oldPrice = oldPrice || existingBanner.oldPrice;
+    existingBanner.discountPercent = discountPercent || existingBanner.discountPercent;
+
+    const updated = await existingBanner.save();
+    res.json(updated);
+  } catch (error) {
+    console.error("Edit error:", error);
+    res.status(500).json({ message: "Error updating banner", error: error.message });
+  }
+});
+
 router.get("/", async (req, res) => {
   try {
     console.log("📋 Banner request received")
@@ -52,7 +87,6 @@ router.get("/", async (req, res) => {
   }
 })
 
-// ✅ POST upload banner
 router.post("/upload", (req, res) => {
   upload.single("image")(req, res, async (err) => {
     if (err) {
@@ -75,9 +109,8 @@ router.post("/upload", (req, res) => {
         productImageUrl,
       } = req.body
 
-      if (!type) {
-        if (req.file) fs.unlinkSync(req.file.path)
-        return res.status(400).json({ message: "Banner type is required" })
+      if (req.file && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
       }
 
       console.log("✅ Creating banner with type:", type)
@@ -87,14 +120,12 @@ router.post("/upload", (req, res) => {
         title: title || "",
       }
 
-      // Handle product-based banners
       if (type === "product-type" || type === "side") {
         if (!productId) {
           if (req.file) fs.unlinkSync(req.file.path)
           return res.status(400).json({ message: "Product ID is required for product-based banners" })
         }
 
-        // Clean up uploaded file (not needed for product banners)
         if (req.file) {
           fs.unlinkSync(req.file.path)
         }
@@ -116,7 +147,6 @@ router.post("/upload", (req, res) => {
           }
         }
       } else {
-        // Handle regular banners (require image file)
         if (!req.file) {
           return res.status(400).json({ message: "Image file is required for this banner type" })
         }
@@ -128,7 +158,6 @@ router.post("/upload", (req, res) => {
         }
       }
 
-      // Save to database
       const banner = new Banner(bannerData)
       const savedBanner = await banner.save()
 
@@ -137,7 +166,6 @@ router.post("/upload", (req, res) => {
     } catch (error) {
       console.error("❌ Upload error:", error)
 
-      // Clean up file if error occurs
       if (req.file && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path)
       }
@@ -150,7 +178,6 @@ router.post("/upload", (req, res) => {
   })
 })
 
-// ✅ DELETE all banners
 router.delete("/", async (req, res) => {
   console.log("🔥 DELETE ALL BANNERS")
   try {
@@ -163,7 +190,6 @@ router.delete("/", async (req, res) => {
 
     const banners = await Banner.find(filter)
 
-    // Delete all banner image files (only if not product-type or side)
     banners.forEach((banner) => {
       if (banner.type !== "product-type" && banner.type !== "side" && banner.imageUrl) {
         const filePath = path.join(uploadDir, path.basename(banner.imageUrl))
@@ -190,8 +216,7 @@ router.delete("/", async (req, res) => {
   }
 })
 
-// ✅ DELETE single banner
-router.delete("/delete/:id", async (req, res) => {
+router.delete("/:id", async (req, res) => {
   console.log("🔥 DELETE SINGLE BANNER:", req.params.id)
   try {
     const banner = await Banner.findByIdAndDelete(req.params.id)
@@ -200,7 +225,6 @@ router.delete("/delete/:id", async (req, res) => {
       return res.status(404).json({ message: "Banner not found" })
     }
 
-    // Delete associated file
     if (banner.type !== "product-type" && banner.type !== "side" && banner.imageUrl) {
       const filePath = path.join(uploadDir, path.basename(banner.imageUrl))
       if (fs.existsSync(filePath)) {
