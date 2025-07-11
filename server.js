@@ -48,8 +48,8 @@ app.use("/api/banners", bannerRoutes);
 app.use("/api", userRoutes);
 app.use("/api/cart", cartRoutes);
 
-app.get("/", (req, res) => {
-  res.send("Mirakle Server is Running");
+app.get("/static-test", (req, res) => {
+  res.sendFile(path.join(__dirname, "uploads/products/1752230681501-1.jpg"));
 });
 
 mongoose.connect(process.env.MONGO_URI)
