@@ -48,10 +48,10 @@ router.get("/all-products", async (req, res) => {
   }
 })
 
-// ✅ GET related products - FIXED: Make sure the route pattern is correct
-router.get("/related/:id", async (req, res) => {
+// ✅ GET related products - FIXED: Simple route pattern
+router.get("/related/:productId", async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id)
+    const product = await Product.findById(req.params.productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
     const keywords = product.keywords || []
@@ -174,10 +174,11 @@ router.get("/search", async (req, res) => {
   }
 })
 
-// ✅ POST submit a review - FIXED: Ensure route pattern is correct
-router.post("/:id/review", auth, reviewUpload.array("images", 5), async (req, res) => {
+// ✅ POST submit a review - FIXED: Simple route pattern
+router.post("/review/:productId", auth, reviewUpload.array("images", 5), async (req, res) => {
   try {
     const { rating, comment } = req.body
+    const productId = req.params.productId
 
     if (!rating || !comment) {
       return res.status(400).json({ message: "Rating and comment are required" })
@@ -187,7 +188,7 @@ router.post("/:id/review", auth, reviewUpload.array("images", 5), async (req, re
       return res.status(400).json({ message: "Rating must be between 1 and 5" })
     }
 
-    const product = await Product.findById(req.params.id)
+    const product = await Product.findById(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
     // Check if user already reviewed
@@ -225,10 +226,10 @@ router.post("/:id/review", auth, reviewUpload.array("images", 5), async (req, re
   }
 })
 
-// ✅ DELETE a review - FIXED: Ensure route pattern is correct
-router.delete("/:id/review/:reviewId", auth, async (req, res) => {
+// ✅ DELETE a review - FIXED: Simple route pattern
+router.delete("/review/:productId/:reviewId", auth, async (req, res) => {
   try {
-    const { id: productId, reviewId } = req.params
+    const { productId, reviewId } = req.params
     const userId = req.user.id
 
     const product = await Product.findById(productId)
@@ -262,8 +263,8 @@ router.delete("/:id/review/:reviewId", auth, async (req, res) => {
   }
 })
 
-// ✅ POST like a review - FIXED: Ensure route pattern is correct
-router.post("/:productId/review/:reviewId/like", auth, async (req, res) => {
+// ✅ POST like a review - FIXED: Simple route pattern
+router.post("/review/:productId/:reviewId/like", auth, async (req, res) => {
   try {
     const { productId, reviewId } = req.params
     const userId = req.user.id
@@ -310,8 +311,8 @@ router.post("/:productId/review/:reviewId/like", auth, async (req, res) => {
   }
 })
 
-// ✅ POST dislike a review - FIXED: Ensure route pattern is correct
-router.post("/:productId/review/:reviewId/dislike", auth, async (req, res) => {
+// ✅ POST dislike a review - FIXED: Simple route pattern
+router.post("/review/:productId/:reviewId/dislike", auth, async (req, res) => {
   try {
     const { productId, reviewId } = req.params
     const userId = req.user.id
@@ -359,11 +360,12 @@ router.post("/:productId/review/:reviewId/dislike", auth, async (req, res) => {
 })
 
 // ✅ PUT update product
-router.put("/:id", upload.array("images", 10), async (req, res) => {
+router.put("/update/:productId", upload.array("images", 10), async (req, res) => {
   try {
     const { name, variants, description, details, removedImages, keywords } = req.body
+    const productId = req.params.productId
 
-    const product = await Product.findById(req.params.id)
+    const product = await Product.findById(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
     product.title = name || product.title
@@ -423,9 +425,9 @@ router.put("/:id", upload.array("images", 10), async (req, res) => {
 })
 
 // ✅ GET debug reviews - FIXED: Simple route pattern
-router.get("/:id/debug-reviews", async (req, res) => {
+router.get("/debug-reviews/:productId", async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id)
+    const product = await Product.findById(req.params.productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
     res.json({ reviews: product.reviews })
@@ -436,10 +438,11 @@ router.get("/:id/debug-reviews", async (req, res) => {
 })
 
 // ✅ PUT toggle stock status
-router.put("/:id/toggle-stock", async (req, res) => {
+router.put("/toggle-stock/:productId", async (req, res) => {
   try {
     const { isOutOfStock } = req.body
-    const updated = await Product.findByIdAndUpdate(req.params.id, { isOutOfStock }, { new: true })
+    const productId = req.params.productId
+    const updated = await Product.findByIdAndUpdate(productId, { isOutOfStock }, { new: true })
     res.json(updated)
   } catch (err) {
     res.status(500).json({ message: err.message })
@@ -447,9 +450,10 @@ router.put("/:id/toggle-stock", async (req, res) => {
 })
 
 // ✅ DELETE product
-router.delete("/:id", async (req, res) => {
+router.delete("/delete/:productId", async (req, res) => {
   try {
-    const product = await Product.findByIdAndDelete(req.params.id)
+    const productId = req.params.productId
+    const product = await Product.findByIdAndDelete(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
     if (product.images && product.images.others) {
