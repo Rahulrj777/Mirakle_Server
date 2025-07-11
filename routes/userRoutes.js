@@ -1,108 +1,82 @@
-// File: routes/userRoutes.js
-import express from "express";
-import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
-import crypto from "crypto";
-import nodemailer from "nodemailer";
-import User from "../models/User.js";
-import dotenv from "dotenv";
-dotenv.config();
+import express from "express"
+import bcrypt from "bcryptjs"
+import jwt from "jsonwebtoken"
+import User from "../models/User.js"
 
-const router = express.Router();
+const router = express.Router()
 
-// POST /api/signup
+// Register
 router.post("/signup", async (req, res) => {
   try {
-    const { name, email, password } = req.body;
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ message: "User already exists" });
+    const { name, email, password } = req.body
 
-    const hashed = await bcrypt.hash(password, 10);
-    const newUser = new User({ name, email, password: hashed });
-    await newUser.save();
+    // Check if user exists
+    const existingUser = await User.findOne({ email })
+    if (existingUser) {
+      return res.status(400).json({ message: "User already exists" })
+    }
 
-    res.status(201).json({ message: "User created successfully" });
-  } catch (err) {
-    res.status(500).json({ message: "Signup failed", error: err.message });
+    // Hash password
+    const salt = await bcrypt.genSalt(10)
+    const hashedPassword = await bcrypt.hash(password, salt)
+
+    // Create user
+    const user = new User({
+      name,
+      email,
+      password: hashedPassword,
+    })
+
+    await user.save()
+
+    res.status(201).json({ message: "User created successfully" })
+  } catch (error) {
+    console.error("Signup error:", error)
+    res.status(500).json({ message: "Server error" })
   }
-});
+})
 
-// POST /api/login
+// Login
 router.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: "User not found" });
+    const { email, password } = req.body
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: "Invalid password" });
+    // Find user
+    const user = await User.findOne({ email })
+    if (!user) {
+      return res.status(400).json({ message: "Invalid credentials" })
+    }
 
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET || "secretKey", { expiresIn: "1d" });
+    // Check password
+    const isMatch = await bcrypt.compare(password, user.password)
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid credentials" })
+    }
 
-    res.json({ token, user: { _id: user._id, name: user.name, email: user.email } });
-  } catch (err) {
-    res.status(500).json({ message: "Login failed", error: err.message });
-  }
-});
-
-// POST /api/forgot-password
-router.post("/forgot-password", async (req, res) => {
-  try {
-    const { email } = req.body;
-    const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    const token = crypto.randomBytes(32).toString("hex");
-    user.resetToken = token;
-    user.resetTokenExpiry = Date.now() + 3600000; // 1 hour
-    await user.save();
-
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.MAIL_USER,
-        pass: process.env.MAIL_PASS,
+    // Create token
+    const token = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        name: user.name,
       },
-    });
+      process.env.JWT_SECRET || "your-secret-key",
+      { expiresIn: "7d" },
+    )
 
-    const resetLink = `${process.env.CLIENT_URL}/reset-password/${token}`;
-    console.log("CLIENT_URL is:", process.env.CLIENT_URL);
-
-    await transporter.sendMail({
-      from: process.env.MAIL_USER,
-      to: email,
-      subject: "Password Reset",
-      html: `<h2>Click to reset password:</h2><a href="${resetLink}">Reset Now</a>`,
-    });
-
-    res.json({ message: "Reset email sent!" });
-  } catch (err) {
-    res.status(500).json({ message: "Password reset request failed", error: err.message });
+    res.json({
+      token,
+      user: {
+        _id: user._id,
+        userId: user._id, // Add this for compatibility
+        name: user.name,
+        email: user.email,
+      },
+    })
+  } catch (error) {
+    console.error("Login error:", error)
+    res.status(500).json({ message: "Server error" })
   }
-});
+})
 
-// POST /api/reset-password/:token
-router.post("/reset-password/:token", async (req, res) => {
-  try {
-    const { password } = req.body;
-    const { token } = req.params;
-
-    const user = await User.findOne({
-      resetToken: token,
-      resetTokenExpiry: { $gt: Date.now() },
-    });
-
-    if (!user) return res.status(400).json({ message: "Token expired or invalid" });
-
-    user.password = await bcrypt.hash(password, 10);
-    user.resetToken = undefined;
-    user.resetTokenExpiry = undefined;
-    await user.save();
-
-    res.json({ message: "Password updated successfully" });
-  } catch (err) {
-    res.status(500).json({ message: "Reset failed", error: err.message });
-  }
-});
-
-export default router;
+export default router
