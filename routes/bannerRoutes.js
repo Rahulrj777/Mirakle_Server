@@ -12,8 +12,13 @@ const uploadDir = "uploads/banners";
   }
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+  destination: function (req, file, cb) {
+    cb(null, "uploads/banners");
+  },
+  filename: function (req, file, cb) {
+    const uniqueName = `${Date.now()}-${file.originalname}`;
+    cb(null, uniqueName);
+  }
 });
 const upload = multer({ storage });
 

@@ -262,7 +262,7 @@ router.put("/:id", upload.array("images", 10), async (req, res) => {
       }
     }
 
-    const newImages = req.files.map((file) => `${uploadDir}/${file.filename}`)
+    const newImages = req.files?.map((file) => `${uploadDir}/${file.filename}`) || []
 
     if (removedImages) {
       try {
