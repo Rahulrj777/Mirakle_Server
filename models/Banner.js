@@ -2,18 +2,48 @@ import mongoose from "mongoose"
 
 const bannerSchema = new mongoose.Schema(
   {
-    type: { type: String, required: true },
-    imageUrl: { type: String },
-    hash: { type: String },
-    title: { type: String },
-    productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
-    selectedVariantIndex: { type: Number, default: 0 },
-    price: { type: Number },
-    oldPrice: { type: Number },
-    discountPercent: { type: Number },
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    type: {
+      type: String,
+      enum: ["side", "offer", "main"],
+      default: "offer",
+    },
+    imageUrl: {
+      type: String,
+      required: true,
+    },
+    productId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      default: null,
+    },
+    discountPercent: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+    price: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    oldPrice: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     weight: {
-      value: { type: Number },
-      unit: { type: String },
+      value: { type: Number, default: 0 },
+      unit: { type: String, enum: ["g", "ml", "li", "kg"], default: "g" },
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
     },
   },
   {
@@ -21,6 +51,4 @@ const bannerSchema = new mongoose.Schema(
   },
 )
 
-// NO INDEXES for now to avoid conflicts
-const Banner = mongoose.model("Banner", bannerSchema)
-export default Banner
+export default mongoose.model("Banner", bannerSchema)
