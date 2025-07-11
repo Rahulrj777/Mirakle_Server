@@ -9,7 +9,7 @@ const bannerSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["side", "offer", "main"],
+      enum: ["side", "offer", "main", "slider", "product-type"],
       default: "offer",
     },
     imageUrl: {
