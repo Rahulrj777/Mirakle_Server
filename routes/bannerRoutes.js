@@ -45,7 +45,6 @@ router.put("/edit/:id", upload.single("image"), async (req, res) => {
     const { title, type, price, oldPrice, discountPercent } = req.body;
 
     if (req.file) {
-      // Delete old image if not product-type
       if (
         existingBanner.type !== "product-type" &&
         existingBanner.type !== "side" &&
@@ -90,8 +89,8 @@ router.get("/", async (req, res) => {
 router.post("/upload", (req, res) => {
   upload.single("image")(req, res, async (err) => {
     if (err) {
-      console.log("❌ Multer error:", err.message)
-      return res.status(400).json({ message: `Upload error: ${err.message}` })
+      console.log("❌ Multer error:", err.message);
+      return res.status(400).json({ message: `Upload error: ${err.message}` });
     }
 
     try {
@@ -107,76 +106,79 @@ router.post("/upload", (req, res) => {
         productId,
         selectedVariantIndex,
         productImageUrl,
-      } = req.body
+      } = req.body;
 
-      if (req.file && fs.existsSync(req.file.path)) {
-        fs.unlinkSync(req.file.path);
+      console.log("✅ Creating banner with type:", type);
+      console.log("🖼️ Uploaded file:", req.file?.originalname || "No file");
+
+      if (!type) {
+        if (req.file) fs.unlinkSync(req.file.path);
+        return res.status(400).json({ message: "Banner type is required" });
       }
-
-      console.log("✅ Creating banner with type:", type)
 
       let bannerData = {
         type,
         title: title || "",
-      }
+      };
 
       if (type === "product-type" || type === "side") {
         if (!productId) {
-          if (req.file) fs.unlinkSync(req.file.path)
-          return res.status(400).json({ message: "Product ID is required for product-based banners" })
+          if (req.file) fs.unlinkSync(req.file.path);
+          return res.status(400).json({ message: "Product ID is required for product-based banners" });
         }
 
-        if (req.file) {
-          fs.unlinkSync(req.file.path)
+        // These types don't need image from upload (we use productImageUrl)
+        if (req.file && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path); // Cleanup unused upload
         }
 
         bannerData = {
           ...bannerData,
           productId,
-          selectedVariantIndex: Number.parseInt(selectedVariantIndex) || 0,
+          selectedVariantIndex: Number(selectedVariantIndex) || 0,
           imageUrl: productImageUrl || "",
-          price: Number.parseFloat(price) || 0,
-          oldPrice: Number.parseFloat(oldPrice) || 0,
-          discountPercent: Number.parseFloat(discountPercent) || 0,
-        }
+          price: Number(price) || 0,
+          oldPrice: Number(oldPrice) || 0,
+          discountPercent: Number(discountPercent) || 0,
+        };
 
         if (weightValue && weightUnit) {
           bannerData.weight = {
-            value: Number.parseFloat(weightValue),
+            value: Number(weightValue),
             unit: weightUnit,
-          }
+          };
         }
       } else {
         if (!req.file) {
-          return res.status(400).json({ message: "Image file is required for this banner type" })
+          return res.status(400).json({ message: "Image file is required for this banner type" });
         }
 
         bannerData = {
           ...bannerData,
           imageUrl: `/${uploadDir}/${req.file.filename}`,
           hash: hash || null,
-        }
+        };
       }
 
-      const banner = new Banner(bannerData)
-      const savedBanner = await banner.save()
+      const banner = new Banner(bannerData);
+      const savedBanner = await banner.save();
 
-      console.log("✅ Banner saved successfully")
-      res.status(201).json(savedBanner)
+      console.log("✅ Banner saved successfully");
+      res.status(201).json(savedBanner);
     } catch (error) {
-      console.error("❌ Upload error:", error)
+      console.error("❌ Upload error:", error);
 
       if (req.file && fs.existsSync(req.file.path)) {
-        fs.unlinkSync(req.file.path)
+        fs.unlinkSync(req.file.path); // cleanup
       }
 
       res.status(500).json({
         message: "Server error during upload",
         error: error.message,
-      })
+      });
     }
-  })
-})
+  });
+});
 
 router.delete("/", async (req, res) => {
   console.log("🔥 DELETE ALL BANNERS")
