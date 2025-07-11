@@ -8,16 +8,19 @@ import { verifyToken } from "../middleware/verifyToken.js"
 import { likeReview, dislikeReview } from "../controllers/productController.js"
 
 const router = express.Router()
-
-const uploadDir = "uploads/products"
+const uploadDir = path.join(__dirname, "uploads/products");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
-})
-
-const upload = multer({ storage })
+  destination: function (req, file, cb) {
+    cb(null, "uploads/products");
+  },
+  filename: function (req, file, cb) {
+    const uniqueName = `${Date.now()}-${file.originalname}`;
+    cb(null, uniqueName);
+  }
+});
+const upload = multer({ storage });
 
 router.get("/all-products", async (req, res) => {
   try {
@@ -263,6 +266,7 @@ router.put("/:id", upload.array("images", 10), async (req, res) => {
     }
 
     const newImages = req.files?.map((file) => `${uploadDir}/${file.filename}`) || []
+    console.log("🖼 Uploaded Files:", req.files);
 
     if (removedImages) {
       try {
