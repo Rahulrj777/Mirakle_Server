@@ -21,13 +21,13 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 })
 
-// ✅ Debug middleware
+// Debug middleware
 router.use((req, res, next) => {
-  console.log(`🔥 BANNER ROUTE: ${req.method} ${req.path}`)
+  console.log(`🔥 BANNER ROUTE: ${req.method} ${req.originalUrl}`)
   next()
 })
 
-// ✅ Test route
+// Test route
 router.get("/test", (req, res) => {
   console.log("✅ Banner test route hit")
   res.json({
@@ -36,23 +36,25 @@ router.get("/test", (req, res) => {
   })
 })
 
-// ✅ GET all banners - This is the main route your frontend needs
+// GET all banners - SIMPLIFIED with error handling
 router.get("/", async (req, res) => {
   try {
-    console.log("📋 Banner request received")
-    const banners = await Banner.find().sort({ createdAt: -1 })
+    // Simple find without populate first
+    const banners = await Banner.find()
     console.log(`✅ Found ${banners.length} banners`)
     res.json(banners)
   } catch (error) {
     console.error("❌ GET banners error:", error)
+    console.error("Error stack:", error.stack)
     res.status(500).json({
       message: "Failed to fetch banners",
       error: error.message,
+      stack: error.stack,
     })
   }
 })
 
-// ✅ POST upload banner
+// POST upload - SIMPLIFIED
 router.post("/upload", (req, res) => {
   upload.single("image")(req, res, async (err) => {
     if (err) {
@@ -80,7 +82,7 @@ router.post("/upload", (req, res) => {
         return res.status(400).json({ message: "Banner type is required" })
       }
 
-      console.log("✅ Creating banner with type:", type)
+      console.log("✅ Type:", type)
 
       let bannerData = {
         type,
@@ -136,6 +138,7 @@ router.post("/upload", (req, res) => {
       res.status(201).json(savedBanner)
     } catch (error) {
       console.error("❌ Upload error:", error)
+      console.error("Error stack:", error.stack)
 
       // Clean up file if error occurs
       if (req.file && fs.existsSync(req.file.path)) {
@@ -145,18 +148,20 @@ router.post("/upload", (req, res) => {
       res.status(500).json({
         message: "Server error during upload",
         error: error.message,
+        stack: error.stack,
       })
     }
   })
 })
 
-// ✅ DELETE all banners
+// DELETE all banners or by specific type
 router.delete("/", async (req, res) => {
   console.log("🔥 DELETE ALL BANNERS")
+
   try {
     const { type } = req.query
-    let filter = {}
 
+    let filter = {}
     if (type && type !== "all") {
       filter = { type }
     }
@@ -190,12 +195,12 @@ router.delete("/", async (req, res) => {
   }
 })
 
-// ✅ DELETE single banner
-router.delete("/delete/:id", async (req, res) => {
+// DELETE single banner
+router.delete("/:id", async (req, res) => {
   console.log("🔥 DELETE SINGLE BANNER:", req.params.id)
+
   try {
     const banner = await Banner.findByIdAndDelete(req.params.id)
-
     if (!banner) {
       return res.status(404).json({ message: "Banner not found" })
     }

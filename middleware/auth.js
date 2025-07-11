@@ -15,16 +15,7 @@ const auth = (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET || "your-secret-key")
-
-    // Ensure the user object has all necessary fields
-    req.user = {
-      id: decoded.id || decoded._id,
-      email: decoded.email,
-      name: decoded.name,
-      ...decoded,
-    }
-
-    console.log("Auth middleware - User:", req.user)
+    req.user = decoded
     next()
   } catch (error) {
     console.error("Auth middleware error:", error)

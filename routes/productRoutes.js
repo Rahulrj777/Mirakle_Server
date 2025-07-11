@@ -1,126 +1,164 @@
-import express from "express"
-import multer from "multer"
-import fs from "fs"
-import path from "path"
-import Product from "../models/Product.js"
-import auth from "../middleware/auth.js"
+// routes/productRoutes.js
+import express from 'express';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+import Product from '../models/Product.js';
+import auth from '../middleware/auth.js';
+import Cart from '../models/Cart.js'
 
-const router = express.Router()
+const router = express.Router();
 
-const uploadDir = "uploads/products"
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
+const uploadDir = 'uploads/products';
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
-})
+  filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
+});
+const upload = multer({ storage });
 
-const upload = multer({ storage })
-
-// Add review image upload configuration
-const reviewUploadDir = "uploads/reviews"
-if (!fs.existsSync(reviewUploadDir)) fs.mkdirSync(reviewUploadDir, { recursive: true })
-
-const reviewStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, reviewUploadDir),
-  filename: (req, file, cb) => cb(null, Date.now() + "-review-" + file.originalname),
-})
-
-const reviewUpload = multer({
-  storage: reviewStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
-      cb(null, true)
-    } else {
-      cb(new Error("Only image files are allowed"), false)
-    }
-  },
-})
-
-// ✅ GET all products
-router.get("/all-products", async (req, res) => {
+// GET /api/cart
+router.get('/', auth, async (req, res) => {
   try {
-    const products = await Product.find()
-    res.json(products)
+    let cart = await Cart.findOne({ user: req.user.id });
+    if (!cart) cart = await Cart.create({ user: req.user.id, items: [] });
+    res.json(cart.items);
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message })
+    res.status(500).json({ message: "Server error", error: err.message });
   }
-})
+});
 
-// ✅ GET related products
+// POST /api/cart (upsert)
+router.post('/', auth, async (req, res) => {
+  try {
+    const { _id, title, images, weight, currentPrice, quantity } = req.body;
+
+    if (!_id || !quantity) return res.status(400).json({ message: "Missing product or quantity" });
+
+    let cart = await Cart.findOne({ user: req.user.id });
+    if (!cart) cart = await Cart.create({ user: req.user.id, items: [] });
+
+    const index = cart.items.findIndex(item => item.productId.toString() === _id && item.weight?.value === weight?.value);
+
+    if (index !== -1) {
+      cart.items[index].quantity += quantity;
+    } else {
+      cart.items.push({
+        productId: _id,
+        title,
+        images,
+        weight,
+        currentPrice,
+        quantity,
+      });
+    }
+
+    await cart.save();
+    res.status(201).json(cart.items);
+  } catch (err) {
+    console.error("Add to cart error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+// DELETE /api/cart/:productId
+router.delete('/:productId', auth, async (req, res) => {
+  try {
+    const cart = await Cart.findOne({ user: req.user.id });
+    if (!cart) return res.status(404).json({ message: 'Cart not found' });
+
+    cart.items = cart.items.filter(item => item.productId.toString() !== req.params.productId);
+    await cart.save();
+    res.json(cart.items);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+router.get('/all-products', async (req, res) => {
+  try {
+    const products = await Product.find();
+    res.json(products);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
 router.get("/related/:id", async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id)
-    if (!product) return res.status(404).json({ message: "Product not found" })
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: "Product not found" });
 
-    const keywords = product.keywords || []
-    const related = await Product.find({
+    const keywords = product.keywords || [];
+
+    let related = await Product.find({
       _id: { $ne: product._id },
       keywords: { $in: keywords },
-    }).limit(10)
+    }).limit(10);
 
     if (related.length < 4) {
       const additional = await Product.find({
         _id: { $ne: product._id },
-      }).limit(10)
-      const existingIds = new Set(related.map((p) => p._id.toString()))
-      additional.forEach((p) => {
+      }).limit(10);
+
+      const existingIds = new Set(related.map(p => p._id.toString()));
+      additional.forEach(p => {
         if (!existingIds.has(p._id.toString())) {
-          related.push(p)
+          related.push(p);
         }
-      })
+      });
     }
 
-    res.json(related.slice(0, 10))
+    res.json(related.slice(0, 10));
   } catch (error) {
-    console.error("Failed to fetch related products:", error)
-    res.status(500).json({ message: "Server error" })
+    console.error("Failed to fetch related products:", error);
+    res.status(500).json({ message: "Server error" });
   }
-})
+});
 
-// ✅ POST upload product
-router.post("/upload-product", upload.array("images", 10), async (req, res) => {
+router.post('/upload-product', upload.array('images', 10), async (req, res) => {
   try {
-    const { name, variants, description, details, keywords } = req.body
+    const { name, variants, description, details, keywords } = req.body;
 
     if (!name || !variants) {
-      return res.status(400).json({ message: "Product name and variants are required" })
+      return res.status(400).json({ message: 'Product name and variants are required' });
     }
 
-    let parsedVariants, parsedDetails, parsedKeywords
+    let parsedVariants, parsedDetails, parsedKeywords;
+
     try {
-      parsedVariants = JSON.parse(variants)
-      parsedDetails = details ? JSON.parse(details) : {}
-      parsedKeywords = keywords ? JSON.parse(keywords) : []
+      parsedVariants = JSON.parse(variants);
+      parsedDetails = details ? JSON.parse(details) : {};
+      parsedKeywords = keywords ? JSON.parse(keywords) : [];
     } catch (err) {
-      return res.status(400).json({ message: "Invalid JSON in variants, details, or keywords" })
+      return res.status(400).json({ message: 'Invalid JSON in variants, details, or keywords' });
     }
 
-    const images = req.files.map((file) => `${uploadDir}/${file.filename}`)
+    const images = req.files.map(file => `/${uploadDir}/${file.filename}`);
 
     const newProduct = new Product({
       title: name,
       variants: parsedVariants,
-      description: description || "",
+      description: description || '',
       details: parsedDetails,
       keywords: parsedKeywords,
       images: {
         others: images,
       },
-    })
+    });
 
-    await newProduct.save()
-    res.status(201).json(newProduct)
+    await newProduct.save();
+    res.status(201).json(newProduct);
   } catch (err) {
-    console.error("Upload error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
+    console.error('Upload error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
-})
+});
 
-// ✅ GET search products
 router.get("/search", async (req, res) => {
-  const query = req.query.query || ""
+  const query = req.query.query || "";
+
   try {
     const results = await Product.aggregate([
       {
@@ -128,7 +166,7 @@ router.get("/search", async (req, res) => {
           $or: [
             { title: { $regex: query, $options: "i" } },
             { keywords: { $regex: query, $options: "i" } },
-            { description: { $regex: query, $options: "i" } },
+            { description: { $regex: query, $options: "i" } }
           ],
         },
       },
@@ -136,8 +174,7 @@ router.get("/search", async (req, res) => {
         $addFields: {
           matchStrength: {
             $cond: [
-              { $regexMatch: { input: "$title", regex: query, options: "i" } },
-              3,
+              { $regexMatch: { input: "$title", regex: query, options: "i" } }, 3,
               {
                 $cond: [
                   {
@@ -146,376 +183,157 @@ router.get("/search", async (req, res) => {
                         $reduce: {
                           input: "$keywords",
                           initialValue: "",
-                          in: { $concat: ["$$value", " ", "$$this"] },
-                        },
+                          in: { $concat: ["$$value", " ", "$$this"] }
+                        }
                       },
                       regex: query,
-                      options: "i",
-                    },
-                  },
-                  2,
+                      options: "i"
+                    }
+                  }, 2,
                   {
-                    $cond: [{ $regexMatch: { input: "$description", regex: query, options: "i" } }, 1, 0],
-                  },
-                ],
-              },
-            ],
-          },
-        },
+                    $cond: [
+                      { $regexMatch: { input: "$description", regex: query, options: "i" } }, 1, 0
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
       },
       { $sort: { matchStrength: -1, createdAt: -1 } },
-      { $limit: 10 },
-    ])
+      { $limit: 10 }
+    ]);
 
-    res.json(results)
+    res.json(results);
   } catch (error) {
-    console.error("Search failed:", error)
-    res.status(500).json({ error: "Search failed" })
+    console.error("Search failed:", error);
+    res.status(500).json({ error: "Search failed" });
   }
-})
+});
 
-// ✅ POST submit a review (with image upload)
-router.post("/:id/review", auth, reviewUpload.array("images", 5), async (req, res) => {
+router.post('/:id/review', auth, async (req, res) => {
   try {
-    const { rating, comment } = req.body
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    console.log("Review submission:", {
-      productId: req.params.id,
-      userId: req.user.id,
-      userName: req.user.name,
-      rating,
-      comment,
-      userObject: req.user,
-    })
+    const alreadyReviewed = product.reviews?.find(r => r.user.toString() === req.user.id);
+    if (alreadyReviewed) return res.status(400).json({ message: 'You already reviewed this product' });
 
-    if (!rating || !comment) {
-      return res.status(400).json({ message: "Rating and comment are required" })
-    }
-
-    if (rating < 1 || rating > 5) {
-      return res.status(400).json({ message: "Rating must be between 1 and 5" })
-    }
-
-    const product = await Product.findById(req.params.id)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-
-    // Check if user already reviewed
-    const existingReviewIndex = product.reviews.findIndex((r) => r.user.toString() === req.user.id)
-
-    if (existingReviewIndex !== -1) {
-      return res.status(400).json({ message: "You have already reviewed this product. You can only review once." })
-    }
-
-    // Process uploaded images
-    const reviewImages = req.files ? req.files.map((file) => `/${reviewUploadDir}/${file.filename}`) : []
-
-    // Create new review with proper user field
     const newReview = {
-      user: req.user.id, // Make sure this is set
-      name: req.user.name || req.user.email || "User",
-      rating: Number(rating),
-      comment: comment.trim(),
-      images: reviewImages,
-      likes: [],
-      dislikes: [],
+      user: req.user.id,
+      rating: Number(req.body.rating),
+      comment: req.body.comment,
       createdAt: new Date(),
-    }
+    };
 
-    console.log("Creating review with data:", newReview)
+    product.reviews = product.reviews || [];
+    product.reviews.push(newReview);
+    await product.save();
 
-    product.reviews.push(newReview)
-    await product.save()
-
-    console.log("Review added successfully:", newReview._id)
-
-    res.status(201).json({
-      message: "Review submitted successfully",
-      review: newReview,
-      reviews: product.reviews,
-    })
+    res.status(201).json({ message: 'Review added' });
   } catch (err) {
-    console.error("Review error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
+    console.error('Review error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
-})
+});
 
-// ✅ DELETE a review
-router.delete("/:id/review/:reviewId", auth, async (req, res) => {
+/**
+ * PUT /api/products/:id
+ */
+router.put('/:id', upload.array('images', 10), async (req, res) => {
   try {
-    const { id: productId, reviewId } = req.params
-    const userId = req.user.id
+    const { name, variants, description, details, removedImages, keywords } = req.body;
 
-    console.log("Delete review request:", { productId, reviewId, userId })
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    const product = await Product.findById(productId)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-
-    const reviewIndex = product.reviews.findIndex((r) => r._id.toString() === reviewId && r.user.toString() === userId)
-
-    if (reviewIndex === -1) {
-      console.log("Review not found or unauthorized:", {
-        reviewId,
-        userId,
-        existingReviews: product.reviews.map((r) => ({ id: r._id.toString(), user: r.user.toString() })),
-      })
-      return res.status(404).json({ message: "Review not found or unauthorized" })
-    }
-
-    const review = product.reviews[reviewIndex]
-
-    // Delete review images from filesystem
-    if (review.images && review.images.length > 0) {
-      review.images.forEach((imagePath) => {
-        const fullPath = path.join(process.cwd(), imagePath.replace(/^\//, ""))
-        if (fs.existsSync(fullPath)) {
-          fs.unlinkSync(fullPath)
-        }
-      })
-    }
-
-    product.reviews.splice(reviewIndex, 1)
-    await product.save()
-
-    console.log("Review deleted successfully")
-    res.json({ message: "Review deleted successfully" })
-  } catch (err) {
-    console.error("Delete review error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
-  }
-})
-
-// ✅ POST like a review
-router.post("/:productId/review/:reviewId/like", auth, async (req, res) => {
-  try {
-    const { productId, reviewId } = req.params
-    const userId = req.user.id
-
-    console.log("Like request:", { productId, reviewId, userId })
-
-    const product = await Product.findById(productId)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-
-    const review = product.reviews.id(reviewId)
-    if (!review) {
-      console.log("Review not found:", {
-        reviewId,
-        existingReviews: product.reviews.map((r) => r._id.toString()),
-      })
-      return res.status(404).json({ message: "Review not found" })
-    }
-
-    // Initialize arrays if they don't exist
-    if (!review.likes) review.likes = []
-    if (!review.dislikes) review.dislikes = []
-
-    const hasLiked = review.likes.includes(userId)
-    const hasDisliked = review.dislikes.includes(userId)
-
-    if (hasLiked) {
-      // Remove like
-      review.likes.pull(userId)
-    } else {
-      // Add like and remove dislike if exists
-      if (hasDisliked) {
-        review.dislikes.pull(userId)
-      }
-      review.likes.push(userId)
-    }
-
-    await product.save()
-
-    console.log("Like action completed:", { hasLiked: !hasLiked, likes: review.likes.length })
-
-    res.status(200).json({
-      message: hasLiked ? "Like removed" : "Review liked",
-      review: {
-        _id: review._id,
-        likes: review.likes.length,
-        dislikes: review.dislikes.length,
-        userLiked: review.likes.includes(userId),
-        userDisliked: review.dislikes.includes(userId),
-      },
-    })
-  } catch (err) {
-    console.error("Like Review Error:", err)
-    res.status(500).json({ message: "Something went wrong" })
-  }
-})
-
-// ✅ POST dislike a review
-router.post("/:productId/review/:reviewId/dislike", auth, async (req, res) => {
-  try {
-    const { productId, reviewId } = req.params
-    const userId = req.user.id
-
-    console.log("Dislike request:", { productId, reviewId, userId })
-
-    const product = await Product.findById(productId)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-
-    const review = product.reviews.id(reviewId)
-    if (!review) {
-      console.log("Review not found:", {
-        reviewId,
-        existingReviews: product.reviews.map((r) => r._id.toString()),
-      })
-      return res.status(404).json({ message: "Review not found" })
-    }
-
-    // Initialize arrays if they don't exist
-    if (!review.likes) review.likes = []
-    if (!review.dislikes) review.dislikes = []
-
-    const hasLiked = review.likes.includes(userId)
-    const hasDisliked = review.dislikes.includes(userId)
-
-    if (hasDisliked) {
-      // Remove dislike
-      review.dislikes.pull(userId)
-    } else {
-      // Add dislike and remove like if exists
-      if (hasLiked) {
-        review.likes.pull(userId)
-      }
-      review.dislikes.push(userId)
-    }
-
-    await product.save()
-
-    console.log("Dislike action completed:", { hasDisliked: !hasDisliked, dislikes: review.dislikes.length })
-
-    res.status(200).json({
-      message: hasDisliked ? "Dislike removed" : "Review disliked",
-      review: {
-        _id: review._id,
-        likes: review.likes.length,
-        dislikes: review.dislikes.length,
-        userLiked: review.likes.includes(userId),
-        userDisliked: review.dislikes.includes(userId),
-      },
-    })
-  } catch (err) {
-    console.error("Dislike Review Error:", err)
-    res.status(500).json({ message: "Something went wrong" })
-  }
-})
-
-// ✅ PUT update product
-router.put("/:id", upload.array("images", 10), async (req, res) => {
-  try {
-    const { name, variants, description, details, removedImages, keywords } = req.body
-    const product = await Product.findById(req.params.id)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-
-    product.title = name || product.title
-    product.description = description || ""
+    product.title = name || product.title;
+    product.description = description || '';
 
     if (details) {
       try {
-        product.details = JSON.parse(details)
+        product.details = JSON.parse(details);
       } catch {
-        product.details = {}
+        product.details = {};
       }
     }
 
     if (keywords) {
       try {
-        product.keywords = JSON.parse(keywords)
+        product.keywords = JSON.parse(keywords);
       } catch (err) {
-        return res.status(400).json({ message: "Invalid keywords JSON" })
+        return res.status(400).json({ message: 'Invalid keywords JSON' });
       }
     }
 
     if (variants) {
       try {
-        const parsedVariants = JSON.parse(variants)
-        product.variants = parsedVariants
+        const parsedVariants = JSON.parse(variants);
+        product.variants = parsedVariants;
       } catch (err) {
-        return res.status(400).json({ message: "Invalid variants JSON" })
+        return res.status(400).json({ message: 'Invalid variants JSON' });
       }
     }
 
-    const newImages = req.files.map((file) => `${uploadDir}/${file.filename}`)
+    const newImages = req.files.map(file => `/${uploadDir}/${file.filename}`);
 
     if (removedImages) {
       try {
-        const removed = JSON.parse(removedImages)
-        product.images.others = product.images.others.filter((img) => {
+        const removed = JSON.parse(removedImages);
+        product.images.others = product.images.others.filter(img => {
           if (removed.includes(img)) {
-            const fullPath = path.join(uploadDir, path.basename(img))
-            if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
-            return false
+            const fullPath = path.join(uploadDir, path.basename(img));
+            if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+            return false;
           }
-          return true
-        })
+          return true;
+        });
       } catch (err) {
-        return res.status(400).json({ message: "Invalid removedImages JSON" })
+        return res.status(400).json({ message: 'Invalid removedImages JSON' });
       }
     }
 
-    product.images.others = [...product.images.others, ...newImages]
-    await product.save()
+    product.images.others = [...product.images.others, ...newImages];
 
-    res.json({ message: "Product updated successfully", product })
+    await product.save();
+    res.json({ message: 'Product updated successfully', product });
   } catch (err) {
-    console.error("Update error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
+    console.error('Update error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
-})
+});
 
-// Add this route temporarily for debugging
-router.get("/:id/debug-reviews", async (req, res) => {
+router.put('/:id/toggle-stock', async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-    
-    console.log("🔍 Debug - All reviews for product:", req.params.id)
-    product.reviews.forEach((review, index) => {
-      console.log(`Review ${index}:`, {
-        _id: review._id,
-        user: review.user,
-        hasLikes: !!review.likes,
-        hasDisikes: !!review.dislikes,
-        likesCount: review.likes?.length || 0,
-        dislikesCount: review.dislikes?.length || 0
-      })
-    })
-    
-    res.json({ reviews: product.reviews })
+    const { isOutOfStock } = req.body;
+    const updated = await Product.findByIdAndUpdate(
+      req.params.id,
+      { isOutOfStock },
+      { new: true }
+    );
+    res.json(updated);
   } catch (err) {
-    console.error("Debug error:", err)
-    res.status(500).json({ error: err.message })
+    res.status(500).json({ message: err.message });
   }
-})
+});
 
-// ✅ PUT toggle stock status
-router.put("/:id/toggle-stock", async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    const { isOutOfStock } = req.body
-    const updated = await Product.findByIdAndUpdate(req.params.id, { isOutOfStock }, { new: true })
-    res.json(updated)
-  } catch (err) {
-    res.status(500).json({ message: err.message })
-  }
-})
-
-// ✅ DELETE product
-router.delete("/:id", async (req, res) => {
-  try {
-    const product = await Product.findByIdAndDelete(req.params.id)
-    if (!product) return res.status(404).json({ message: "Product not found" })
+    const product = await Product.findByIdAndDelete(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
 
     if (product.images && product.images.others) {
       for (const imgPath of product.images.others) {
-        const fullPath = path.join(uploadDir, path.basename(imgPath))
-        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+        const fullPath = path.join(uploadDir, path.basename(imgPath));
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
       }
     }
 
-    res.json({ message: "Product deleted" })
+    res.json({ message: 'Product deleted' });
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message })
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
-})
+});
 
-export default router
+export default router;
