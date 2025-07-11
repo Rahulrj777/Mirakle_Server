@@ -6,6 +6,8 @@ import Product from "../models/Product.js"
 import auth from "../middleware/auth.js"
 import { verifyToken } from "../middleware/verifyToken.js"
 import { likeReview, dislikeReview } from "../controllers/productController.js"
+import parser from "../middleware/cloudinaryStorage.js";
+import Product from "../models/Product.js";
 
 const router = express.Router()
 const uploadDir = path.join(__dirname, "uploads/products");
@@ -21,6 +23,36 @@ const storage = multer.diskStorage({
   }
 });
 const upload = multer({ storage });
+
+router.put("/:id", parser.array("images", 10), async (req, res) => {
+  try {
+    const { name, variants, description, details, removedImages, keywords } = req.body;
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+    product.title = name || product.title;
+    product.description = description || "";
+
+    if (details) product.details = JSON.parse(details);
+    if (keywords) product.keywords = JSON.parse(keywords);
+    if (variants) product.variants = JSON.parse(variants);
+
+    const newImages = req.files?.map((file) => file.path) || []; // cloudinary gives URL in `file.path`
+
+    if (removedImages) {
+      const removed = JSON.parse(removedImages);
+      product.images.others = product.images.others.filter((img) => !removed.includes(img));
+    }
+
+    product.images.others = [...product.images.others, ...newImages];
+    await product.save();
+
+    res.json({ message: "Product updated successfully", product });
+  } catch (err) {
+    console.error("Update error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
 
 router.get("/all-products", async (req, res) => {
   try {
@@ -322,7 +354,6 @@ router.delete("/:id", async (req, res) => {
   }
 })
 
-// ✅ Like and Dislike routes
 router.post("/:productId/review/:reviewId/like", verifyToken, likeReview)
 router.post("/:productId/review/:reviewId/dislike", verifyToken, dislikeReview)
 
