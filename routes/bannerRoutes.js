@@ -127,9 +127,8 @@ router.post("/upload", (req, res) => {
           return res.status(400).json({ message: "Product ID is required for product-based banners" });
         }
 
-        // These types don't need image from upload (we use productImageUrl)
-        if (req.file && fs.existsSync(req.file.path)) {
-          fs.unlinkSync(req.file.path); // Cleanup unused upload
+        if ((type === "side" || type === "product-type") && req.file && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
         }
 
         bannerData = {
