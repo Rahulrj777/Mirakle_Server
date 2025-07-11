@@ -2,8 +2,6 @@ import express from 'express';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import path from "path";
-import { fileURLToPath } from "url";
 
 import bannerRoutes from './routes/bannerRoutes.js';
 import productRoutes from './routes/productRoutes.js';
@@ -20,9 +18,6 @@ const allowedOrigins = [
   "https://mirakle-admin.vercel.app",
 ];
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -36,7 +31,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(express.json());
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/uploads", express.static("uploads"));
 
 app.use((req, res, next) => {
   console.log("📥 Request received:", req.method, req.url);
@@ -48,8 +43,8 @@ app.use("/api/banners", bannerRoutes);
 app.use("/api", userRoutes);
 app.use("/api/cart", cartRoutes);
 
-app.get("/static-test", (req, res) => {
-  res.sendFile(path.join(__dirname, "uploads/products/1752230681501-1.jpg"));
+app.get("/", (req, res) => {
+  res.send("Mirakle Server is Running");
 });
 
 mongoose.connect(process.env.MONGO_URI)
