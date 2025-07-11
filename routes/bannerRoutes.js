@@ -108,8 +108,14 @@ router.post("/upload", (req, res) => {
         productImageUrl,
       } = req.body;
 
-      console.log("✅ Creating banner with type:", type);
-      console.log("🖼️ Uploaded file:", req.file?.originalname || "No file");
+      console.log("🧪 Incoming Upload Payload:", {
+        type,
+        title,
+        productId,
+        selectedVariantIndex,
+        productImageUrl,
+        reqFile: req.file?.filename,
+      });
 
       if (!type) {
         if (req.file) fs.unlinkSync(req.file.path);
@@ -124,28 +130,29 @@ router.post("/upload", (req, res) => {
       if (type === "product-type" || type === "side") {
         if (!productId) {
           if (req.file) fs.unlinkSync(req.file.path);
-          return res.status(400).json({ message: "Product ID is required for product-based banners" });
-        }
-
-        if ((type === "side" || type === "product-type") && req.file && fs.existsSync(req.file.path)) {
-          fs.unlinkSync(req.file.path);
+          return res.status(400).json({ message: "Product ID is required" });
         }
 
         bannerData = {
           ...bannerData,
           productId,
-          selectedVariantIndex: Number(selectedVariantIndex) || 0,
+          selectedVariantIndex: parseInt(selectedVariantIndex || "0"),
           imageUrl: productImageUrl || "",
-          price: Number(price) || 0,
-          oldPrice: Number(oldPrice) || 0,
-          discountPercent: Number(discountPercent) || 0,
+          price: parseFloat(price || "0"),
+          oldPrice: parseFloat(oldPrice || "0"),
+          discountPercent: parseFloat(discountPercent || "0"),
         };
 
         if (weightValue && weightUnit) {
           bannerData.weight = {
-            value: Number(weightValue),
+            value: parseFloat(weightValue),
             unit: weightUnit,
           };
+        }
+
+        // Delete the uploaded file (not needed for these types)
+        if (req.file && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
         }
       } else {
         if (!req.file) {
@@ -162,13 +169,13 @@ router.post("/upload", (req, res) => {
       const banner = new Banner(bannerData);
       const savedBanner = await banner.save();
 
-      console.log("✅ Banner saved successfully");
+      console.log("✅ Banner saved successfully:", savedBanner._id);
       res.status(201).json(savedBanner);
     } catch (error) {
       console.error("❌ Upload error:", error);
 
       if (req.file && fs.existsSync(req.file.path)) {
-        fs.unlinkSync(req.file.path); // cleanup
+        fs.unlinkSync(req.file.path);
       }
 
       res.status(500).json({
@@ -178,6 +185,7 @@ router.post("/upload", (req, res) => {
     }
   });
 });
+
 
 router.delete("/", async (req, res) => {
   console.log("🔥 DELETE ALL BANNERS")
