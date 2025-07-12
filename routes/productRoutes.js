@@ -4,8 +4,6 @@ import fs from "fs"
 import path from "path"
 import Product from "../models/Product.js"
 import auth from "../middleware/auth.js"
-import { verifyToken } from "../middleware/verifyToken.js"
-import { likeReview, dislikeReview } from "../controllers/productController.js"
 
 const router = express.Router()
 const uploadDir = path.join(__dirname, "uploads/products");
@@ -53,7 +51,6 @@ router.get("/related/:id", async (req, res) => {
         }
       })
     }
-
     res.json(related.slice(0, 10))
   } catch (error) {
     console.error("Failed to fetch related products:", error)
@@ -78,7 +75,11 @@ router.post("/upload-product", upload.array("images", 10), async (req, res) => {
       return res.status(400).json({ message: "Invalid JSON in variants, details, or keywords" })
     }
 
-    const images = req.files.map((file) => `${uploadDir}/${file.filename}`)
+    const images = req.files.map((file) => `/uploads/products/${file.filename}`);
+
+    if (!Array.isArray(parsedVariants) || parsedVariants.length === 0) {
+      return res.status(400).json({ message: 'At least one variant is required' });
+    }
 
     const newProduct = new Product({
       title: name,
@@ -154,7 +155,6 @@ router.get("/search", async (req, res) => {
   }
 })
 
-// ✅ FIXED: Review submission route
 router.post("/:id/review", auth, async (req, res) => {
   try {
     const { rating, comment } = req.body
@@ -231,68 +231,79 @@ router.delete("/:id/review/:reviewId", auth, async (req, res) => {
   }
 })
 
-router.put("/:id", upload.array("images", 10), async (req, res) => {
+router.put("/:id", auth, upload.array("images", 10), async (req, res) => {
   try {
-    const { name, variants, description, details, removedImages, keywords } = req.body
-    const product = await Product.findById(req.params.id)
-    if (!product) return res.status(404).json({ message: "Product not found" })
+    const { name, variants, description, details, removedImages, keywords } = req.body;
 
-    product.title = name || product.title
-    product.description = description || ""
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: "Product not found" });
 
+    // Title and description trim
+    product.title = name?.trim() || product.title;
+    product.description = description?.trim() || "";
+
+    // Parse and assign details
     if (details) {
       try {
-        product.details = JSON.parse(details)
+        product.details = JSON.parse(details);
       } catch {
-        product.details = {}
+        product.details = {};
       }
     }
-
+    // Parse and validate keywords
     if (keywords) {
       try {
-        product.keywords = JSON.parse(keywords)
-      } catch (err) {
-        return res.status(400).json({ message: "Invalid keywords JSON" })
+        const parsedKeywords = JSON.parse(keywords);
+        if (!Array.isArray(parsedKeywords) || !parsedKeywords.every(k => typeof k === 'string')) {
+          return res.status(400).json({ message: "Keywords must be an array of strings" });
+        }
+        product.keywords = parsedKeywords;
+      } catch {
+        return res.status(400).json({ message: "Invalid keywords JSON" });
       }
     }
-
+    // Parse and validate variants
     if (variants) {
       try {
-        const parsedVariants = JSON.parse(variants)
-        product.variants = parsedVariants
+        const parsedVariants = JSON.parse(variants);
+        if (!Array.isArray(parsedVariants) || parsedVariants.length === 0) {
+          return res.status(400).json({ message: "At least one variant is required" });
+        }
+        product.variants = parsedVariants;
       } catch (err) {
-        return res.status(400).json({ message: "Invalid variants JSON" })
+        return res.status(400).json({ message: "Invalid variants JSON" });
       }
     }
-
-    const newImages = req.files?.map((file) => `${uploadDir}/${file.filename}`) || []
+    // Map new image paths
+    const newImages = req.files?.map(file => `/${uploadDir}/${file.filename}`) || [];
     console.log("🖼 Uploaded Files:", req.files);
 
+    // Remove selected images
     if (removedImages) {
       try {
-        const removed = JSON.parse(removedImages)
+        const removed = JSON.parse(removedImages);
         product.images.others = product.images.others.filter((img) => {
           if (removed.includes(img)) {
-            const fullPath = path.join(uploadDir, path.basename(img))
-            if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
-            return false
+            const fullPath = path.join(uploadDir, path.basename(img));
+            if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+            return false;
           }
-          return true
-        })
+          return true;
+        });
       } catch (err) {
-        return res.status(400).json({ message: "Invalid removedImages JSON" })
+        return res.status(400).json({ message: "Invalid removedImages JSON" });
       }
     }
+    // Add new images
+    product.images.others = [...product.images.others, ...newImages];
 
-    product.images.others = [...product.images.others, ...newImages]
-    await product.save()
-
-    res.json({ message: "Product updated successfully", product })
+    await product.save();
+    res.json({ message: "Product updated successfully", product });
   } catch (err) {
-    console.error("Update error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
+    console.error("Update error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
-})
+});
 
 router.put("/:id/toggle-stock", async (req, res) => {
   try {
@@ -322,7 +333,6 @@ router.delete("/:id", async (req, res) => {
   }
 })
 
-// ✅ Like and Dislike routes
 router.post("/:productId/review/:reviewId/like", verifyToken, likeReview)
 router.post("/:productId/review/:reviewId/dislike", verifyToken, dislikeReview)
 

@@ -19,10 +19,14 @@ const userSchema = new mongoose.Schema(
       required: true,
       minlength: 6,
     },
+    isAdmin: {
+      type: Boolean,
+      default: false, 
+    },
   },
   {
     timestamps: true,
-  },
+  }
 )
 
 export default mongoose.model("User", userSchema)
