@@ -43,7 +43,7 @@ router.put("/edit/:id", upload.single("image"), async (req, res) => {
       return res.status(404).json({ message: "Banner not found" });
     }
 
-    const { title, type, price, oldPrice, discountPercent } = req.body;
+    const { type, price, oldPrice, discountPercent } = req.body;
 
     if (req.file) {
       if (
@@ -58,7 +58,6 @@ router.put("/edit/:id", upload.single("image"), async (req, res) => {
       existingBanner.imageUrl = `/${uploadDir}/${req.file.filename}`;
     }
 
-    existingBanner.title = title || existingBanner.title;
     existingBanner.type = type || existingBanner.type;
     existingBanner.price = price || existingBanner.price;
     existingBanner.oldPrice = oldPrice || existingBanner.oldPrice;
@@ -97,7 +96,6 @@ router.post("/upload", (req, res) => {
       const {
         type,
         hash,
-        title,
         price,
         weightValue,
         weightUnit,
@@ -115,7 +113,6 @@ router.post("/upload", (req, res) => {
 
       let bannerData = {
         type,
-        title: title || "",
       };
 
       if (type === "product-type" || type === "side") {
