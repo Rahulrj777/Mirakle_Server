@@ -2,18 +2,43 @@ import mongoose from "mongoose"
 
 const bannerSchema = new mongoose.Schema(
   {
-    type: { type: String, required: true },
-    imageUrl: { type: String },
-    hash: { type: String }, // No unique constraint at all
-    title: { type: String },
-    productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
-    selectedVariantIndex: { type: Number, default: 0 },
-    price: { type: Number },
-    oldPrice: { type: Number },
-    discountPercent: { type: Number },
+    type: {
+      type: String,
+      enum: ["side", "offer", "main"],
+      default: "offer",
+    },
+    imageUrl: {
+      type: String,
+      required: true,
+    },
+    productId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      default: null,
+    },
+    discountPercent: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+    price: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    oldPrice: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     weight: {
-      value: { type: Number },
-      unit: { type: String },
+      value: { type: Number, default: 0 },
+      unit: { type: String, enum: ["g", "ml", "li", "kg"], default: "g" },
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
     },
   },
   {
@@ -21,6 +46,4 @@ const bannerSchema = new mongoose.Schema(
   },
 )
 
-// NO INDEX AT ALL - Let duplicates happen, we'll handle it in code
-const Banner = mongoose.model("Banner", bannerSchema)
-export default Banner
+export default mongoose.model("Banner", bannerSchema)
