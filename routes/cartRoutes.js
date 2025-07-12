@@ -5,7 +5,6 @@ import { verifyToken } from "../middleware/verifyToken.js"
 
 const router = express.Router()
 
-// ✅ Get user's cart
 router.get("/", auth, async (req, res) => {
   try {
     const userId = req.user.id
@@ -22,7 +21,6 @@ router.get("/", auth, async (req, res) => {
   }
 })
 
-// ✅ Add single item to cart
 router.post("/add", verifyToken, async (req, res) => {
   try {
     const userId = req.user.id
@@ -58,7 +56,6 @@ router.post("/add", verifyToken, async (req, res) => {
   }
 })
 
-// ✅ Replace entire cart (for sync)
 router.post("/", auth, async (req, res) => {
   try {
     const userId = req.user.id
@@ -80,7 +77,6 @@ router.post("/", auth, async (req, res) => {
   }
 })
 
-// ✅ Clear cart
 router.delete("/", auth, async (req, res) => {
   try {
     const userId = req.user.id
