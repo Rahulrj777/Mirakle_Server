@@ -2,8 +2,14 @@ import express from "express"
 import multer from "multer"
 import fs from "fs"
 import path from "path"
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+  
 import Product from "../models/Product.js"
 import auth from "../middleware/auth.js"
+// import { likeReview, dislikeReview } from "..controllers/userController.js"
 
 const router = express.Router()
 const uploadDir = path.join(__dirname, "uploads/products");
@@ -60,26 +66,26 @@ router.get("/related/:id", async (req, res) => {
 
 router.post("/upload-product", upload.array("images", 10), async (req, res) => {
   try {
-    const { name, variants, description, details, keywords } = req.body
+    const { name, variants, description, details, keywords } = req.body;
+
+    console.log("🔍 Body:", req.body);
+    console.log("🖼 Images:", req.files);
 
     if (!name || !variants) {
-      return res.status(400).json({ message: "Product name and variants are required" })
+      return res.status(400).json({ message: "Product name and variants are required" });
     }
 
-    let parsedVariants, parsedDetails, parsedKeywords
+    let parsedVariants, parsedDetails, parsedKeywords;
     try {
-      parsedVariants = JSON.parse(variants)
-      parsedDetails = details ? JSON.parse(details) : {}
-      parsedKeywords = keywords ? JSON.parse(keywords) : []
+      parsedVariants = JSON.parse(variants);
+      parsedDetails = details ? JSON.parse(details) : {};
+      parsedKeywords = keywords ? JSON.parse(keywords) : [];
     } catch (err) {
-      return res.status(400).json({ message: "Invalid JSON in variants, details, or keywords" })
+      console.error("❌ JSON Parse Error:", err);
+      return res.status(400).json({ message: "Invalid JSON in variants, details, or keywords" });
     }
 
     const images = req.files.map((file) => `/uploads/products/${file.filename}`);
-
-    if (!Array.isArray(parsedVariants) || parsedVariants.length === 0) {
-      return res.status(400).json({ message: 'At least one variant is required' });
-    }
 
     const newProduct = new Product({
       title: name,
@@ -90,15 +96,15 @@ router.post("/upload-product", upload.array("images", 10), async (req, res) => {
       images: {
         others: images,
       },
-    })
+    });
 
-    await newProduct.save()
-    res.status(201).json(newProduct)
+    await newProduct.save();
+    res.status(201).json(newProduct);
   } catch (err) {
-    console.error("Upload error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
+    console.error("❌ Upload error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
-})
+});
 
 router.get("/search", async (req, res) => {
   const query = req.query.query || ""
@@ -331,7 +337,7 @@ router.delete("/:id", async (req, res) => {
   }
 })
 
-router.post("/:productId/review/:reviewId/like", verifyToken, likeReview)
-router.post("/:productId/review/:reviewId/dislike", verifyToken, dislikeReview)
+// router.post("/:productId/review/:reviewId/like", auth, likeReview)
+// router.post("/:productId/review/:reviewId/dislike", auth, dislikeReview)
 
 export default router

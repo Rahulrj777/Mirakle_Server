@@ -1,7 +1,6 @@
 import express from "express"
 import Cart from "../models/Cart.js"
 import auth from "../middleware/auth.js"
-import { verifyToken } from "../middleware/verifyToken.js"
 
 const router = express.Router()
 
@@ -21,7 +20,7 @@ router.get("/", auth, async (req, res) => {
   }
 })
 
-router.post("/add", verifyToken, async (req, res) => {
+router.post("/add", auth, async (req, res) => {
   try {
     const userId = req.user.id
     const { item } = req.body
