@@ -1,20 +1,15 @@
-import express from "express";
-import multer from "multer";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import Product from "../models/Product.js";
-import auth from "../middleware/auth.js";
-import { verifyToken } from "../middleware/verifyToken.js";
-import { likeReview, dislikeReview } from "../controllers/productController.js";
+import express from "express"
+import multer from "multer"
+import fs from "fs"
+import path from "path"
+import Product from "../models/Product.js"
+import auth from "../middleware/auth.js"
+import { verifyToken } from "../middleware/verifyToken.js"
+import { likeReview, dislikeReview } from "../controllers/productController.js"
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
+const router = express.Router()
 const uploadDir = path.join(__dirname, "uploads/products");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const router = express.Router();
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
