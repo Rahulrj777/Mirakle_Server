@@ -2,14 +2,9 @@ import mongoose from "mongoose"
 
 const bannerSchema = new mongoose.Schema(
   {
-    title: {
-      type: String,
-      required: true,
-      trim: true,
-    },
     type: {
       type: String,
-      enum: ["side", "offer", "main", "slider", "product-type"],
+      enum: ["side", "offer", "main"],
       default: "offer",
     },
     imageUrl: {
