@@ -9,7 +9,6 @@ const __dirname = path.dirname(__filename);
   
 import Product from "../models/Product.js"
 import auth from "../middleware/auth.js"
-// import { likeReview, dislikeReview } from "..controllers/userController.js"
 
 const router = express.Router()
 const uploadDir = path.join(__dirname, "uploads/products");
@@ -17,7 +16,7 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, "uploads/products");
+    cb(null, path.join(__dirname, "../uploads/products"));
   },
   filename: function (req, file, cb) {
     const uniqueName = `${Date.now()}-${file.originalname}`;
@@ -278,8 +277,8 @@ router.put("/:id", auth, upload.array("images", 10), async (req, res) => {
         return res.status(400).json({ message: "Invalid variants JSON" });
       }
     }
-    // Map new image paths
-    const newImages = req.files?.map(file => `/${uploadDir}/${file.filename}`) || [];
+
+    const newImages = req.files?.map(file => `/uploads/products/${file.filename}`) || [];
     console.log("🖼 Uploaded Files:", req.files);
 
     // Remove selected images
@@ -292,7 +291,7 @@ router.put("/:id", auth, upload.array("images", 10), async (req, res) => {
             if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
             return false;
           }
-          return true;
+          return true; 
         });
       } catch (err) {
         return res.status(400).json({ message: "Invalid removedImages JSON" });
@@ -336,8 +335,5 @@ router.delete("/:id", async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
-
-// router.post("/:productId/review/:reviewId/like", auth, likeReview)
-// router.post("/:productId/review/:reviewId/dislike", auth, dislikeReview)
 
 export default router
