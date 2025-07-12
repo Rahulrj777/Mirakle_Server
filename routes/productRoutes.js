@@ -205,8 +205,6 @@ router.post("/:id/review", auth, async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
-
-// ✅ FIXED: Delete review route
 router.delete("/:id/review/:reviewId", auth, async (req, res) => {
   try {
     const { id: productId, reviewId } = req.params

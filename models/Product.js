@@ -7,6 +7,8 @@ const variantSchema = new mongoose.Schema({
     unit: { type: String, enum: ['g', 'ml', 'li'], default: 'g' },
   },
   price: { type: Number },
+  discountPercent: { type: Number, default: 0 },
+  stock: { type: Number, default: 0 },
 }, { _id: false });
 
 const reviewSchema = new mongoose.Schema({
@@ -27,10 +29,6 @@ const productSchema = new mongoose.Schema(
     variants: [variantSchema],
     discountPercent: { type: Number, default: 0 },
     oldPrice: { type: Number, default: 0 },
-    weight: {
-      value: { type: Number, default: 0 },
-      unit: { type: String, enum: ['g', 'ml', 'li'], default: 'g' },
-    },
     isOutOfStock: { type: Boolean, default: false },
     details: { type: mongoose.Schema.Types.Mixed, default: {} },
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },

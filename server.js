@@ -2,6 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import path from "path"
 
 import bannerRoutes from './routes/bannerRoutes.js';
 import productRoutes from './routes/productRoutes.js';
@@ -31,7 +32,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(express.json());
-app.use("/uploads", express.static("uploads"));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")))
 
 app.use((req, res, next) => {
   console.log("📥 Request received:", req.method, req.url);
