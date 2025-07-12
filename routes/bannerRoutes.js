@@ -1,15 +1,20 @@
-import express from "express"
-import multer from "multer"
-import fs from "fs"
-import path from "path"
-import Banner from "../models/Banner.js"
+import multer from "multer";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import express from "express";
+import Banner from "../models/Banner.js";
 
-const router = express.Router()
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const uploadDir = "uploads/banners";
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-  }
+const uploadDir = path.join(__dirname, "../uploads/banners");
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const router = express.Router();
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
