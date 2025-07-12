@@ -52,6 +52,14 @@ router.get("/", async (req, res) => {
   }
 })
 
+// Define banner limits
+const BANNER_LIMITS = {
+  side: 3,
+  offer: 1,
+  main: 5, // Corresponds to "Banner" type
+  "product-type": 10,
+}
+
 // Refactored POST route to use multer as middleware
 router.post("/upload", upload.single("image"), async (req, res) => {
   try {
@@ -69,17 +77,23 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     } = req.body
 
     console.log("🔍 Banner Body:", req.body)
-    console.log("🖼 Banner File:", req.file)
+    console.log("🖼 Banner File (if any):", req.file)
 
     if (!type) {
       if (req.file) fs.unlinkSync(req.file.path)
       return res.status(400).json({ message: "Banner type is required" })
     }
 
+    // Check banner limits before proceeding
+    const currentBannerCount = await Banner.countDocuments({ type })
+    if (BANNER_LIMITS[type] && currentBannerCount >= BANNER_LIMITS[type]) {
+      if (req.file) fs.unlinkSync(req.file.path) // Delete uploaded file if limit exceeded
+      return res.status(400).json({ message: `Limit of ${BANNER_LIMITS[type]} banners reached for type '${type}'` })
+    }
+
     const bannerData = { type }
 
     if (type === "main" || type === "offer") {
-      // "slider" mapped to "main"
       if (!req.file) {
         return res.status(400).json({ message: "Image file is required for this banner type" })
       }
@@ -88,6 +102,8 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       // bannerData.hash = hash || null;
     } else if (type === "product-type" || type === "side") {
       if (!productId || !productImageUrl || !title || !price) {
+        // If a file was accidentally uploaded for these types, delete it
+        if (req.file) fs.unlinkSync(req.file.path)
         return res
           .status(400)
           .json({ message: "Product ID, image URL, title, and price are required for this banner type" })
