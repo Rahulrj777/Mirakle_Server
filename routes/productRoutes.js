@@ -11,20 +11,35 @@ import auth from "../middleware/auth.js" // Assuming this path is correct
 
 const router = express.Router()
 
-const uploadDir = path.join(__dirname, "../uploads/products") // This path is relative to the routes folder
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
+// --- Multer setup for Product Images ---
+const productUploadDir = path.join(__dirname, "../uploads/products")
+if (!fs.existsSync(productUploadDir)) fs.mkdirSync(productUploadDir, { recursive: true })
 
-const storage = multer.diskStorage({
+const productStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, uploadDir) // Use the defined uploadDir
+    cb(null, productUploadDir)
   },
   filename: (req, file, cb) => {
     const uniqueName = `${Date.now()}-${file.originalname}`
     cb(null, uniqueName)
   },
 })
+const uploadProduct = multer({ storage: productStorage })
 
-const upload = multer({ storage })
+// --- Multer setup for Review Images --- 🚨 NEW
+const reviewUploadDir = path.join(__dirname, "../uploads/reviews")
+if (!fs.existsSync(reviewUploadDir)) fs.mkdirSync(reviewUploadDir, { recursive: true })
+
+const reviewStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, reviewUploadDir)
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = `${Date.now()}-${file.originalname}`
+    cb(null, uniqueName)
+  },
+})
+const uploadReview = multer({ storage: reviewStorage })
 
 router.get("/all-products", async (req, res) => {
   try {
@@ -62,7 +77,7 @@ router.get("/related/:id", async (req, res) => {
   }
 })
 
-router.post("/upload-product", upload.array("images", 10), async (req, res) => {
+router.post("/upload-product", uploadProduct.array("images", 10), async (req, res) => {
   try {
     const { name, variants, description, details, keywords } = req.body
     console.log("🔍 Body:", req.body)
@@ -157,60 +172,182 @@ router.get("/search", async (req, res) => {
   }
 })
 
-router.post("/:id/review", auth, async (req, res) => {
+// 🚨 MODIFIED: Review Submission Route with Multer for images
+router.post("/:id/review", auth, uploadReview.array("images", 5), async (req, res) => {
   try {
     const { rating, comment } = req.body
+    const reviewImages = req.files?.map((file) => `/uploads/reviews/${file.filename}`) || [] // Get image paths
+
     if (!rating || !comment) {
+      // Delete uploaded files if validation fails
+      reviewImages.forEach((imgPath) => {
+        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+      })
       return res.status(400).json({ message: "Rating and comment are required" })
     }
     if (rating < 1 || rating > 5) {
+      reviewImages.forEach((imgPath) => {
+        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+      })
       return res.status(400).json({ message: "Rating must be between 1 and 5" })
     }
+
     const product = await Product.findById(req.params.id)
-    if (!product) return res.status(404).json({ message: "Product not found" })
+    if (!product) {
+      reviewImages.forEach((imgPath) => {
+        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+      })
+      return res.status(404).json({ message: "Product not found" })
+    }
+
     // Check if user already reviewed
     const existingReviewIndex = product.reviews.findIndex((r) => r.user.toString() === req.user.id)
+
     if (existingReviewIndex !== -1) {
       // Update existing review
+      // Delete old images if any
+      product.reviews[existingReviewIndex].images.forEach((imgPath) => {
+        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+      })
+
       product.reviews[existingReviewIndex].rating = Number(rating)
       product.reviews[existingReviewIndex].comment = comment.trim()
-      product.reviews[existingReviewIndex].createdAt = new Date()
+      product.reviews[existingReviewIndex].images = reviewImages // Update images
+      product.reviews[existingReviewIndex].createdAt = new Date() // Update timestamp
     } else {
       // Create new review
       const newReview = {
         user: req.user.id,
-        name: req.user.name || "User",
+        name: req.user.name || "User", // Assuming req.user.name is available from auth middleware
         rating: Number(rating),
         comment: comment.trim(),
+        images: reviewImages, // Add images to new review
         likes: [],
         dislikes: [],
         createdAt: new Date(),
       }
       product.reviews.push(newReview)
     }
+
     await product.save()
-    // Return the updated product with populated reviews
+
+    // Return the updated product with populated reviews (or just the reviews)
     const updatedProduct = await Product.findById(req.params.id)
     res.status(201).json({
       message: "Review submitted successfully",
       reviews: updatedProduct?.reviews,
     })
   } catch (err) {
-    console.error("Review error:", err)
+    console.error("Review submission error:", err)
+    // Ensure any uploaded files are deleted on error
+    if (req.files) {
+      req.files.forEach((file) => {
+        const fullPath = path.join(reviewUploadDir, file.filename)
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+      })
+    }
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
 
+// 🚨 NEW: Like a review
+router.post("/:id/review/:reviewId/like", auth, async (req, res) => {
+  try {
+    const { id: productId, reviewId } = req.params
+    const userId = req.user.id
+
+    const product = await Product.findById(productId)
+    if (!product) return res.status(404).json({ message: "Product not found" })
+
+    const review = product.reviews.id(reviewId) // Find subdocument by its _id
+    if (!review) return res.status(404).json({ message: "Review not found" })
+
+    const userLiked = review.likes.includes(userId)
+    const userDisliked = review.dislikes.includes(userId)
+
+    if (userLiked) {
+      // If already liked, unlike it
+      review.likes = review.likes.filter((id) => id.toString() !== userId.toString())
+    } else {
+      // If not liked, add like
+      review.likes.push(userId)
+      // If previously disliked, remove dislike
+      if (userDisliked) {
+        review.dislikes = review.dislikes.filter((id) => id.toString() !== userId.toString())
+      }
+    }
+
+    await product.save()
+    res.json({ message: "Review liked/unliked successfully", review })
+  } catch (err) {
+    console.error("Like review error:", err)
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+// 🚨 NEW: Dislike a review
+router.post("/:id/review/:reviewId/dislike", auth, async (req, res) => {
+  try {
+    const { id: productId, reviewId } = req.params
+    const userId = req.user.id
+
+    const product = await Product.findById(productId)
+    if (!product) return res.status(404).json({ message: "Product not found" })
+
+    const review = product.reviews.id(reviewId)
+    if (!review) return res.status(404).json({ message: "Review not found" })
+
+    const userLiked = review.likes.includes(userId)
+    const userDisliked = review.dislikes.includes(userId)
+
+    if (userDisliked) {
+      // If already disliked, undislike it
+      review.dislikes = review.dislikes.filter((id) => id.toString() !== userId.toString())
+    } else {
+      // If not disliked, add dislike
+      review.dislikes.push(userId)
+      // If previously liked, remove like
+      if (userLiked) {
+        review.likes = review.likes.filter((id) => id.toString() !== userId.toString())
+      }
+    }
+
+    await product.save()
+    res.json({ message: "Review disliked/undisliked successfully", review })
+  } catch (err) {
+    console.error("Dislike review error:", err)
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+// 🚨 MODIFIED: Delete Review Route (to delete associated images)
 router.delete("/:id/review/:reviewId", auth, async (req, res) => {
   try {
     const { id: productId, reviewId } = req.params
     const userId = req.user.id
     const product = await Product.findById(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
+
     const reviewIndex = product.reviews.findIndex((r) => r._id.toString() === reviewId && r.user.toString() === userId)
     if (reviewIndex === -1) {
       return res.status(404).json({ message: "Review not found or unauthorized" })
     }
+
+    // Delete associated images from the file system 🚨 NEW
+    const reviewToDelete = product.reviews[reviewIndex]
+    if (reviewToDelete.images && reviewToDelete.images.length > 0) {
+      reviewToDelete.images.forEach((imgPath) => {
+        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath)
+        }
+      })
+    }
+
     product.reviews.splice(reviewIndex, 1)
     await product.save()
     res.json({ message: "Review deleted successfully" })
@@ -220,7 +357,7 @@ router.delete("/:id/review/:reviewId", auth, async (req, res) => {
   }
 })
 
-router.put("/:id", auth, upload.array("images", 10), async (req, res) => {
+router.put("/:id", auth, uploadProduct.array("images", 10), async (req, res) => {
   try {
     const { name, variants, description, details, removedImages, keywords } = req.body
     const product = await Product.findById(req.params.id)
@@ -274,7 +411,7 @@ router.put("/:id", auth, upload.array("images", 10), async (req, res) => {
         const removed = JSON.parse(removedImages)
         product.images.others = product.images.others.filter((img) => {
           if (removed.includes(img)) {
-            const fullPath = path.join(uploadDir, path.basename(img))
+            const fullPath = path.join(productUploadDir, path.basename(img))
             if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
             return false
           }
@@ -312,7 +449,7 @@ router.delete("/:id", async (req, res) => {
     if (!product) return res.status(404).json({ message: "Product not found" })
     if (product.images && product.images.others) {
       for (const imgPath of product.images.others) {
-        const fullPath = path.join(uploadDir, path.basename(imgPath))
+        const fullPath = path.join(productUploadDir, path.basename(imgPath))
         if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
       }
     }

@@ -20,9 +20,12 @@ const reviewSchema = new mongoose.Schema(
     name: { type: String, required: true },
     rating: { type: Number, required: true },
     comment: { type: String, required: true },
+    images: [{ type: String }], // 🚨 NEW: Field to store review image URLs
+    likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // 🚨 NEW: Field for users who liked the review
+    dislikes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // 🚨 NEW: Field for users who disliked the review
     createdAt: { type: Date, default: Date.now },
   },
-  { _id: false },
+  { _id: true }, // Ensure _id is generated for reviews
 )
 
 const productSchema = new mongoose.Schema(
