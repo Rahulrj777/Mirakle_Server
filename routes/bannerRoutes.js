@@ -72,6 +72,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       discountPercent,
       weightValue,
       weightUnit,
+      hash, // ✅ Get hash from frontend
     } = req.body
 
     console.log("🔍 Banner Body:", req.body)
@@ -85,38 +86,52 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     const currentBannerCount = await Banner.countDocuments({ type })
     if (BANNER_LIMITS[type] && currentBannerCount >= BANNER_LIMITS[type]) {
       if (req.file) fs.unlinkSync(req.file.path)
-      return res.status(400).json({ message: `Limit of ${BANNER_LIMITS[type]} banners reached for type '${type}'` })
+      return res
+        .status(400)
+        .json({ message: `Limit of ${BANNER_LIMITS[type]} banners reached for type '${type}'` })
     }
 
     const bannerData = { type }
 
+    // ✅ For 'main' or 'offer' – handle image upload
     if (type === "main" || type === "offer") {
       if (!req.file) {
         return res.status(400).json({ message: "Image file is required for this banner type" })
       }
+
+      // ✅ Check for duplicate by hash
+      if (hash) {
+        const existing = await Banner.findOne({ type, hash })
+        if (existing) {
+          fs.unlinkSync(req.file.path)
+          return res.status(400).json({ message: "This image already exists." })
+        }
+        bannerData.hash = hash // ✅ Save hash to DB
+      }
+
       bannerData.imageUrl = `/uploads/banners/${req.file.filename}`
 
     } else if (type === "product-type" || type === "side") {
       if (!productId || !productImageUrl || !title || !price) {
-
         if (req.file) fs.unlinkSync(req.file.path)
-        return res
-          .status(400)
-          .json({ message: "Product ID, image URL, title, and price are required for this banner type" })
+        return res.status(400).json({
+          message: "Product ID, image URL, title, and price are required for this banner type",
+        })
       }
+
       bannerData.productId = productId
       bannerData.imageUrl = productImageUrl
       bannerData.title = title
-      bannerData.price = Number.parseFloat(price)
-      bannerData.oldPrice = Number.parseFloat(oldPrice) || 0
-      bannerData.discountPercent = Number.parseFloat(discountPercent) || 0
+      bannerData.price = Number(price)
+      bannerData.oldPrice = Number(oldPrice) || 0
+      bannerData.discountPercent = Number(discountPercent) || 0
+
       if (weightValue && weightUnit) {
-        bannerData.weight = { value: Number.parseFloat(weightValue), unit: weightUnit }
+        bannerData.weight = { value: Number(weightValue), unit: weightUnit }
       }
 
       if (req.file) {
-
-        fs.unlinkSync(req.file.path)
+        fs.unlinkSync(req.file.path) // side/product-type doesn't use uploaded files
       }
     } else {
       if (req.file) fs.unlinkSync(req.file.path)
@@ -129,7 +144,6 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     res.status(201).json(savedBanner)
   } catch (error) {
     console.error("❌ Upload error:", error)
-
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path)
     }

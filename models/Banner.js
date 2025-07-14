@@ -4,6 +4,7 @@ const bannerSchema = new mongoose.Schema(
   {
     type: { type: String, enum: ["offer", "main", "side", "product-type"], default: "main" },
     imageUrl: { type: String, required: true },
+    hash: { type: String, index: true, sparse: true }, // ✅ ADD THIS LINE
     productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", default: null },
     title: { type: String }, // Added title field
     discountPercent: { type: Number, default: 0, min: 0, max: 100 },
