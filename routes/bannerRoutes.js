@@ -3,21 +3,21 @@ import multer from "multer"
 import fs from "fs"
 import path from "path"
 import Banner from "../models/Banner.js"
-import { fileURLToPath } from "url" // Import for __dirname equivalent
+import { fileURLToPath } from "url"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const router = express.Router()
 
-const uploadDir = path.join(__dirname, "../uploads/banners") // Use path.join with __dirname
+const uploadDir = path.join(__dirname, "../uploads/banners")
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true })
 }
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, uploadDir) // Use the absolute path
+    cb(null, uploadDir) 
   },
   filename: (req, file, cb) => {
     const uniqueName = `${Date.now()}-${file.originalname}`
@@ -56,17 +56,15 @@ router.get("/", async (req, res) => {
 const BANNER_LIMITS = {
   side: 3,
   offer: 1,
-  main: 5, // Corresponds to "Banner" type
+  main: 5, 
   "product-type": 10,
 }
 
-// Refactored POST route to use multer as middleware
 router.post("/upload", upload.single("image"), async (req, res) => {
   try {
     const {
       type,
       productId,
-      selectedVariantIndex,
       productImageUrl,
       title,
       price,
@@ -84,10 +82,9 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       return res.status(400).json({ message: "Banner type is required" })
     }
 
-    // Check banner limits before proceeding
     const currentBannerCount = await Banner.countDocuments({ type })
     if (BANNER_LIMITS[type] && currentBannerCount >= BANNER_LIMITS[type]) {
-      if (req.file) fs.unlinkSync(req.file.path) // Delete uploaded file if limit exceeded
+      if (req.file) fs.unlinkSync(req.file.path)
       return res.status(400).json({ message: `Limit of ${BANNER_LIMITS[type]} banners reached for type '${type}'` })
     }
 
@@ -98,18 +95,17 @@ router.post("/upload", upload.single("image"), async (req, res) => {
         return res.status(400).json({ message: "Image file is required for this banner type" })
       }
       bannerData.imageUrl = `/uploads/banners/${req.file.filename}`
-      // You had 'hash' in your frontend, but it's not in the schema. If needed, add to schema.
-      // bannerData.hash = hash || null;
+
     } else if (type === "product-type" || type === "side") {
       if (!productId || !productImageUrl || !title || !price) {
-        // If a file was accidentally uploaded for these types, delete it
+
         if (req.file) fs.unlinkSync(req.file.path)
         return res
           .status(400)
           .json({ message: "Product ID, image URL, title, and price are required for this banner type" })
       }
       bannerData.productId = productId
-      bannerData.imageUrl = productImageUrl // Use the product's image URL
+      bannerData.imageUrl = productImageUrl
       bannerData.title = title
       bannerData.price = Number.parseFloat(price)
       bannerData.oldPrice = Number.parseFloat(oldPrice) || 0
@@ -117,13 +113,13 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       if (weightValue && weightUnit) {
         bannerData.weight = { value: Number.parseFloat(weightValue), unit: weightUnit }
       }
-      // No new image upload needed for these types, so req.file is not expected
+
       if (req.file) {
-        // If a file was accidentally uploaded, delete it
+
         fs.unlinkSync(req.file.path)
       }
     } else {
-      if (req.file) fs.unlinkSync(req.file.path) // Delete any unexpected file uploads
+      if (req.file) fs.unlinkSync(req.file.path)
       return res.status(400).json({ message: "Invalid banner type" })
     }
 
@@ -133,7 +129,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     res.status(201).json(savedBanner)
   } catch (error) {
     console.error("❌ Upload error:", error)
-    // Ensure any uploaded file is deleted on error
+
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path)
     }

@@ -28,7 +28,6 @@ router.post("/signup", async (req, res) => {
     })
 
     await user.save()
-
     res.status(201).json({ message: "User created successfully" })
   } catch (error) {
     console.error("Signup error:", error)
@@ -40,19 +39,16 @@ router.post("/signup", async (req, res) => {
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body
-
     // Find user
     const user = await User.findOne({ email })
     if (!user) {
       return res.status(400).json({ message: "Invalid credentials" })
     }
-
     // Check password
     const isMatch = await bcrypt.compare(password, user.password)
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid credentials" })
     }
-
     // Create token
     const token = jwt.sign(
       {
@@ -63,7 +59,6 @@ router.post("/login", async (req, res) => {
       process.env.JWT_SECRET || "your-secret-key",
       { expiresIn: "7d" },
     )
-
     res.json({
       token,
       user: {
