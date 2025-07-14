@@ -181,10 +181,12 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ message: "Banner not found" })
     }
     // Only delete physical files for 'main' and 'offer' types
-    if ((banner.type === "main" || banner.type === "offer") && banner.imageUrl) {
-      const filePath = path.join(uploadDir, path.basename(banner.imageUrl))
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath)
+    if ((type === "side" || type === "product-type") && productId) {
+      const alreadyExists = await Banner.findOne({ type, productId });
+      console.log(`❌ Duplicate banner attempt: ${title} (${productId}) already exists in '${type}'`);
+      if (alreadyExists) {
+        return res.status(400).json({ message: `Banner already exists for '${title}'` });
+        console.log(`❌ Duplicate banner attempt: ${title} (${productId}) already exists in '${type}'`);
       }
     }
     res.json({ message: "Banner deleted successfully" })
