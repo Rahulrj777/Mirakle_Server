@@ -175,21 +175,19 @@ router.delete("/", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   try {
-    const banner = await Banner.findById(req.params.id)
+    const banner = await Banner.findByIdAndDelete(req.params.id)
     if (!banner) {
       return res.status(404).json({ message: "Banner not found" })
     }
 
-    // Delete physical image only if it's a stored image
     if ((banner.type === "main" || banner.type === "offer") && banner.imageUrl) {
       const filePath = path.join(uploadDir, path.basename(banner.imageUrl))
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath)
       }
     }
+    res.status(200).json({ message: "Banner deleted successfully" })
 
-    await Banner.findByIdAndDelete(req.params.id)
-    res.json({ message: "Banner deleted successfully" })
   } catch (error) {
     console.error("❌ Failed to delete banner:", error)
     res.status(500).json({
