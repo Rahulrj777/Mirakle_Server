@@ -52,7 +52,6 @@ router.get("/", async (req, res) => {
   }
 })
 
-// Define banner limits
 const BANNER_LIMITS = {
   side: 3,
   offer: 1,
@@ -112,6 +111,13 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       bannerData.imageUrl = `/uploads/banners/${req.file.filename}`
 
     } else if (type === "product-type" || type === "side") {
+      // ✅ Check for duplicate product banner
+      const existingProductBanner = await Banner.findOne({ type, productId });
+      if (existingProductBanner) {
+        if (req.file) fs.unlinkSync(req.file.path);
+        return res.status(400).json({ message: "Banner for this product already exists." });
+      }
+      
       if (!productId || !productImageUrl || !title || !price) {
         if (req.file) fs.unlinkSync(req.file.path)
         return res.status(400).json({
