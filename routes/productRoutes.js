@@ -280,11 +280,9 @@ router.post("/:id/review/:reviewId/like", auth, async (req, res) => {
         review.dislikes = review.dislikes.filter((id) => id.toString() !== userId.toString())
       }
     }
-
+    product.markModified("reviews") 
     await product.save()
-
     let updatedReview = review.toObject()
-
     updatedReview.userLiked = review.likes.some((id) => id.toString() === userId.toString())
     updatedReview.userDisliked = review.dislikes.some((id) => id.toString() === userId.toString())
 
@@ -321,6 +319,7 @@ router.post("/:id/review/:reviewId/dislike", auth, async (req, res) => {
         review.likes = review.likes.filter((id) => id.toString() !== userId.toString())
       }
     }
+    product.markModified("reviews")
     await product.save()
     let updatedReview = review.toObject()
     updatedReview.userLiked = review.likes.some((id) => id.toString() === userId.toString())
