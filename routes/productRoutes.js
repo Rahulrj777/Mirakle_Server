@@ -282,7 +282,13 @@ router.post("/:id/review/:reviewId/like", auth, async (req, res) => {
     }
 
     await product.save()
-    res.json({ message: "Review liked/unliked successfully", review })
+
+    let updatedReview = review.toObject()
+
+    updatedReview.userLiked = review.likes.some((id) => id.toString() === userId.toString())
+    updatedReview.userDisliked = review.dislikes.some((id) => id.toString() === userId.toString())
+
+    res.json({ message: "Review liked/unliked successfully", review: updatedReview })
   } catch (err) {
     console.error("Like review error:", err)
     res.status(500).json({ message: "Server error", error: err.message })
@@ -315,9 +321,12 @@ router.post("/:id/review/:reviewId/dislike", auth, async (req, res) => {
         review.likes = review.likes.filter((id) => id.toString() !== userId.toString())
       }
     }
-
     await product.save()
-    res.json({ message: "Review disliked/undisliked successfully", review })
+    let updatedReview = review.toObject()
+    updatedReview.userLiked = review.likes.some((id) => id.toString() === userId.toString())
+    updatedReview.userDisliked = review.dislikes.some((id) => id.toString() === userId.toString())
+    res.json({ message: "Review disliked/undisliked successfully", review: updatedReview })
+
   } catch (err) {
     console.error("Dislike review error:", err)
     res.status(500).json({ message: "Server error", error: err.message })
