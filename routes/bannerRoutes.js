@@ -55,7 +55,7 @@ router.get("/", async (req, res) => {
 const BANNER_LIMITS = {
   side: 3,
   offer: 1,
-  slider: 5, 
+  main: 5, 
   "product-type": 10,
 }
 
@@ -92,8 +92,8 @@ router.post("/upload", upload.single("image"), async (req, res) => {
 
     const bannerData = { type }
 
-    // ✅ For 'slider' or 'offer' – handle image upload
-    if (type === "slider" || type === "offer") {
+    // ✅ For 'main' or 'offer' – handle image upload
+    if (type === "main" || type === "offer") {
       if (!req.file) {
         return res.status(400).json({ message: "Image file is required for this banner type" })
       }
@@ -170,8 +170,8 @@ router.delete("/", async (req, res) => {
     }
     const banners = await Banner.find(filter)
     banners.forEach((banner) => {
-      // Only delete physical files for 'slider' and 'offer' types
-      if ((banner.type === "slider" || banner.type === "offer") && banner.imageUrl) {
+      // Only delete physical files for 'main' and 'offer' types
+      if ((banner.type === "main" || banner.type === "offer") && banner.imageUrl) {
         const filePath = path.join(uploadDir, path.basename(banner.imageUrl))
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath)
@@ -200,7 +200,7 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ message: "Banner not found" })
     }
 
-    if ((banner.type === "slider" || banner.type === "offer") && banner.imageUrl) {
+    if ((banner.type === "main" || banner.type === "offer") && banner.imageUrl) {
       const filePath = path.join(uploadDir, path.basename(banner.imageUrl))
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath)
