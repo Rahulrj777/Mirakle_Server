@@ -28,6 +28,7 @@ const productSchema = new mongoose.Schema({
     others: [{ type: String }],
   },
   description: { type: String, default: "" },
+  productType: { type: mongoose.Schema.Types.ObjectId, ref: "ProductType", required: true }, // 🚨 Important line
   variants: [variantSchema],
   discountPercent: { type: Number, default: 0 },
   oldPrice: { type: Number, default: 0 },
