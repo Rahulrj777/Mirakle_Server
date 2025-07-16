@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 import Product from "../models/Product.js"
-import auth from "../middleware/auth.js" // Assuming this path is correct
+import auth from "../middleware/auth.js"
 
 const router = express.Router()
 
@@ -251,6 +251,25 @@ router.post("/:id/review", auth, uploadReview.array("images", 5), async (req, re
       })
     }
     res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+router.post("/create", async (req, res) => {
+  try {
+    const product = new Product(req.body)
+    await product.save()
+    res.status(201).json(product)
+  } catch (err) {
+    res.status(400).json({ message: err.message })
+  }
+})
+
+router.get("/", async (req, res) => {
+  try {
+    const products = await Product.find().populate("productType")
+    res.json(products)
+  } catch (err) {
+    res.status(500).json({ message: err.message })
   }
 })
 
