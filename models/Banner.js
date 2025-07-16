@@ -2,7 +2,7 @@ import mongoose from "mongoose"
 
 const bannerSchema = new mongoose.Schema(
   {
-    type: { type: String, enum: ["offer", "banner", "category", "product-type"], default: "banner" },
+    type: { type: String, enum: ["offer", "homebanner", "category", "product-type"], default: "homebanner" },
     imageUrl: { type: String, required: true },
     hash: { type: String, index: true, sparse: true }, // ✅ ADD THIS LINE
     productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", default: null },
