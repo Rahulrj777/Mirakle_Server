@@ -21,9 +21,7 @@ const app = express()
 const allowedOrigins = [
   "https://mirakle-website-m1xp.vercel.app",
   "https://mirakle-client.vercel.app",
-  "https://mirakle-admin.vercel.app",
-  "http://localhost:3000", // Add your frontend development URL here
-  "http://localhost:7000", // If your frontend is served from the same origin during dev
+  "https://mirakle-admin.vercel.app"
 ]
 
 const corsOptions = {
