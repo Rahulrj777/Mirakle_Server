@@ -71,94 +71,120 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       discountPercent,
       weightValue,
       weightUnit,
-      hash, // ✅ Get hash from frontend
-    } = req.body
+      hash,
+    } = req.body;
 
-    console.log("🔍 Banner Body:", req.body)
-    console.log("🖼 Banner File (if any):", req.file)
+    console.log("🔍 Banner Body:", req.body);
+    console.log("🖼 Banner File (if any):", req.file);
 
     if (!type) {
-      if (req.file) fs.unlinkSync(req.file.path)
-      return res.status(400).json({ message: "Banner type is required" })
+      if (req.file) fs.unlinkSync(req.file.path);
+      return res.status(400).json({ message: "Banner type is required" });
     }
 
-    const currentBannerCount = await Banner.countDocuments({ type })
+    const currentBannerCount = await Banner.countDocuments({ type });
     if (BANNER_LIMITS[type] && currentBannerCount >= BANNER_LIMITS[type]) {
-      if (req.file) fs.unlinkSync(req.file.path)
+      if (req.file) fs.unlinkSync(req.file.path);
       return res
         .status(400)
-        .json({ message: `Limit of ${BANNER_LIMITS[type]} banners reached for type '${type}'` })
+        .json({ message: `Limit of ${BANNER_LIMITS[type]} banners reached for type '${type}'` });
     }
 
-    const bannerData = { type }
+    const bannerData = { type };
 
-    // ✅ For 'homebanner' or 'offer' – handle image upload
+    // ✅ HOME BANNER or OFFER ZONE
     if (type === "homebanner" || type === "offer") {
       if (!req.file) {
-        return res.status(400).json({ message: "Image file is required for this banner type" })
+        return res.status(400).json({ message: "Image file is required for this banner type" });
       }
 
-      // ✅ Check for duplicate by hash
       if (hash) {
-        const existing = await Banner.findOne({ type, hash })
+        const existing = await Banner.findOne({ type, hash });
         if (existing) {
-          fs.unlinkSync(req.file.path)
-          return res.status(400).json({ message: "This image already exists." })
+          fs.unlinkSync(req.file.path);
+          return res.status(400).json({ message: "This image already exists." });
         }
-        bannerData.hash = hash // ✅ Save hash to DB
+        bannerData.hash = hash;
       }
 
-      bannerData.imageUrl = `/uploads/banners/${req.file.filename}`
+      bannerData.imageUrl = `/uploads/banners/${req.file.filename}`;
+    }
 
-    } else if (type === "product-type" || type === "category") {
-      // ✅ Check for duplicate product banner
+    // ✅ PRODUCT-TYPE: Full product-based banner
+    else if (type === "product-type") {
       const existingProductBanner = await Banner.findOne({ type, productId });
       if (existingProductBanner) {
         if (req.file) fs.unlinkSync(req.file.path);
         return res.status(400).json({ message: "Banner for this product already exists." });
       }
-      
+
       if (!productId || !productImageUrl || !title || !price) {
-        if (req.file) fs.unlinkSync(req.file.path)
+        if (req.file) fs.unlinkSync(req.file.path);
         return res.status(400).json({
           message: "Product ID, image URL, title, and price are required for this banner type",
-        })
+        });
       }
 
-      bannerData.productId = productId
-      bannerData.imageUrl = productImageUrl
-      bannerData.title = title
-      bannerData.price = Number(price)
-      bannerData.oldPrice = Number(oldPrice) || 0
-      bannerData.discountPercent = Number(discountPercent) || 0
+      bannerData.productId = productId;
+      bannerData.imageUrl = productImageUrl;
+      bannerData.title = title;
+      bannerData.price = Number(price);
+      bannerData.oldPrice = Number(oldPrice) || 0;
+      bannerData.discountPercent = Number(discountPercent) || 0;
 
       if (weightValue && weightUnit) {
-        bannerData.weight = { value: Number(weightValue), unit: weightUnit }
+        bannerData.weight = { value: Number(weightValue), unit: weightUnit };
       }
 
-      if (req.file) {
-        fs.unlinkSync(req.file.path) // category/product-type doesn't use uploaded files
-      }
-    } else {
-      if (req.file) fs.unlinkSync(req.file.path)
-      return res.status(400).json({ message: "Invalid banner type" })
+      if (req.file) fs.unlinkSync(req.file.path); // Remove temp file
     }
 
-    const banner = new Banner(bannerData)
-    const savedBanner = await banner.save()
-    console.log("✅ Banner saved successfully:", savedBanner._id)
-    res.status(201).json(savedBanner)
+    // ✅ CATEGORY: Just image + title
+    else if (type === "category") {
+      if (!req.file) {
+        return res.status(400).json({ message: "Image is required for category banners" });
+      }
+
+      if (!title) {
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ message: "Title is required for category banners" });
+      }
+
+      if (hash) {
+        const existing = await Banner.findOne({ type, hash });
+        if (existing) {
+          fs.unlinkSync(req.file.path);
+          return res.status(400).json({ message: "This category banner image already exists." });
+        }
+        bannerData.hash = hash;
+      }
+
+      bannerData.imageUrl = `/uploads/banners/${req.file.filename}`;
+      bannerData.title = title;
+    }
+
+    // ❌ Unknown type
+    else {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return res.status(400).json({ message: "Invalid banner type" });
+    }
+
+    // ✅ Save to DB
+    const banner = new Banner(bannerData);
+    const savedBanner = await banner.save();
+    console.log("✅ Banner saved successfully:", savedBanner._id);
+    res.status(201).json(savedBanner);
   } catch (error) {
-    console.error("❌ Upload error:", error)
+    console.error("❌ Upload error:", error);
     if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path)
+      fs.unlinkSync(req.file.path);
     }
     res.status(500).json({
       message: "Server error during upload",
       error: error.message,
-    })
+    });
   }
-})
+});
 
 router.delete("/", async (req, res) => {
   console.log("🔥 DELETE ALL BANNERS")
