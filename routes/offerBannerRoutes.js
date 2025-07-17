@@ -46,7 +46,7 @@ router.delete('/:id', async (req, res) => {
     const offer = await OfferBanner.findById(req.params.id);
     if (!offer) return res.status(404).json({ error: 'Offer not found' });
 
-    const filePath = path.join(process.cwd(), offer.imageUrl);
+    const filePath = path.join(__dirname, offer.imageUrl);
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
         }    
@@ -66,9 +66,9 @@ router.delete('/', async (req, res) => {
 
         // Delete images from disk
         for (const banner of banners) {
-        if (fs.existsSync(banner.imageUrl)) {
-            fs.unlinkSync(banner.imageUrl);
-        }
+            if (fs.existsSync(banner.imageUrl)) {
+                fs.unlinkSync(banner.imageUrl);
+            }
         }
 
         await OfferBanner.deleteMany();
