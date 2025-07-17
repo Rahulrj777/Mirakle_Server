@@ -57,7 +57,7 @@ router.delete('/:id', async (req, res) => {
     const offer = await OfferBanner.findById(req.params.id);
     if (!offer) return res.status(404).json({ error: 'Offer not found' });
 
-    const filePath = path.resolve('.', offer.imageUrl);
+    const filePath = path.join(process.cwd(), offer.imageUrl.replace(/^\//, ''));
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
