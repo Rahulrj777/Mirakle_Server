@@ -39,6 +39,26 @@ router.get('/', async (req, res) => {
   res.json(banners);
 });
 
+router.post('/upload', upload.single('image'), async (req, res) => {
+  try {
+    const { title, percentage, slot } = req.body;
+    const imageUrl = `/uploads/offer-banners/${req.file.filename}`;
+
+    // Ensure slot is unique
+    const existing = await OfferBanner.findOne({ slot });
+    if (existing) {
+      return res.status(400).json({ message: `Slot '${slot}' already has a banner. Please delete it first.` });
+    }
+
+    const newOffer = new OfferBanner({ title, percentage, slot, imageUrl });
+    await newOffer.save();
+
+    res.status(201).json({ message: 'Offer banner uploaded', offer: newOffer });
+  } catch (err) {
+    res.status(500).json({ error: 'Upload failed', details: err.message });
+  }
+});
+
 
 // ❌ Delete Offer Banner by ID
 router.delete('/:id', async (req, res) => {
