@@ -34,14 +34,11 @@ router.post('/upload', upload.single('image'), async (req, res) => {
 });
 
 // 🧾 Get All Offer Banners
-router.get('/', async (req, res) => {
-  try {
-    const offers = await OfferBanner.find().sort({ createdAt: -1 });
-    res.json(offers);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch offers' });
-  }
+router.get('/', async (req, res) => { 
+  const banners = await OfferBanner.find(); 
+  res.json(banners);
 });
+
 
 // ❌ Delete Offer Banner by ID
 router.delete('/:id', async (req, res) => {
