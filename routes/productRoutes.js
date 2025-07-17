@@ -287,7 +287,7 @@ router.post("/:id/review/:reviewId/like", auth, async (req, res) => {
     } else {
       review.likes.push(userId)
       if (userDisliked) {
-        review.dislikes = review.dislikes.filter((id) => id.toString() !== userId.toString())
+        review.dislikes.pull(userId)
       }
     }
     product.markModified("reviews")
@@ -317,7 +317,7 @@ router.post("/:id/review/:reviewId/dislike", auth, async (req, res) => {
     } else {
       review.dislikes.push(userId)
       if (userLiked) {
-        review.likes = review.likes.filter((id) => id.toString() !== userId.toString())
+        review.likes.pull(userId)
       }
     }
     product.markModified("reviews")
@@ -443,7 +443,7 @@ router.put("/toggle-stock/:id", async (req, res) => {
   }
 })
 
-router.delete("/:id", async (req, res) => {
+router.delete("/delete/:id", async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
