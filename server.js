@@ -13,6 +13,7 @@ import bannerRoutes from "./routes/bannerRoutes.js"
 import productRoutes from "./routes/productRoutes.js"
 import userRoutes from "./routes/userRoutes.js"
 import cartRoutes from "./routes/cartRoutes.js"
+import offerBannerRoutes from './routes/offerBannerRoutes.js'
 
 dotenv.config()
 
@@ -51,6 +52,7 @@ app.use("/api/products", productRoutes)
 app.use("/api/banners", bannerRoutes)
 app.use("/api", userRoutes)
 app.use("/api/cart", cartRoutes)
+app.use('/api/offer-banners', offerBannerRoutes)
 
 app.get("/", (req, res) => {
   res.send("Mirakle Server is Running")
