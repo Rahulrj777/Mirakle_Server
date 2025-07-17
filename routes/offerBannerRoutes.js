@@ -22,7 +22,7 @@ const upload = multer({ storage });
 router.post('/upload', upload.single('image'), async (req, res) => {
   try {
     const { title, percentage } = req.body;
-    const imageUrl = `${uploadDir}/${req.file.filename}`;
+    const imageUrl = `/uploads/offer-banners/${req.file.filename}`; 
 
     const newOffer = new OfferBanner({ title, percentage, imageUrl });
     await newOffer.save();
@@ -46,8 +46,10 @@ router.delete('/:id', async (req, res) => {
     const offer = await OfferBanner.findById(req.params.id);
     if (!offer) return res.status(404).json({ error: 'Offer not found' });
 
-    // Delete image from disk
-    fs.unlinkSync(offer.imageUrl);
+    const filePath = path.join(process.cwd(), offer.imageUrl);
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }    
 
     // Delete from DB
     await OfferBanner.findByIdAndDelete(req.params.id);
@@ -56,5 +58,24 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ error: 'Deletion failed' });
   }
 });
+
+// ❗ Delete All Offer Banners
+router.delete('/', async (req, res) => {
+    try {
+        const banners = await OfferBanner.find();
+
+        // Delete images from disk
+        for (const banner of banners) {
+        if (fs.existsSync(banner.imageUrl)) {
+            fs.unlinkSync(banner.imageUrl);
+        }
+        }
+
+        await OfferBanner.deleteMany();
+        res.json({ message: 'All offer banners deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete all offer banners', details: err.message });
+    }
+    })
 
 export default router;
