@@ -1,5 +1,5 @@
 // models/OfferBanner.js
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const offerBannerSchema = new mongoose.Schema({
   title: { type: String, required: true },
