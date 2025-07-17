@@ -24,7 +24,7 @@ router.post('/upload', upload.single('image'), async (req, res) => {
     const { title, percentage } = req.body;
     const imageUrl = `/uploads/offer-banners/${req.file.filename}`; 
 
-    const newOffer = new OfferBanner({ title, percentage, imageUrl });
+    const newOffer = new OfferBanner({ title, percentage, imageUrl,type: "offerbanner" });
     await newOffer.save();
 
     res.status(201).json({ message: 'Offer banner uploaded', offer: newOffer });
@@ -64,12 +64,12 @@ router.delete('/', async (req, res) => {
     try {
         const banners = await OfferBanner.find();
 
-        // Delete images from disk
-        for (const banner of banners) {
-        if (fs.existsSync(banner.imageUrl)) {
-            fs.unlinkSync(banner.imageUrl);
-        }
-        }
+for (const banner of banners) {
+    const filePath = path.join(process.cwd(), banner.imageUrl);
+    if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+    }
+}
 
         await OfferBanner.deleteMany();
         res.json({ message: 'All offer banners deleted successfully' });
