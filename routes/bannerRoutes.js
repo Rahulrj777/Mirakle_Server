@@ -54,7 +54,6 @@ router.get("/", async (req, res) => {
 
 const BANNER_LIMITS = {
   category: 3,
-  offer: 2,
   homebanner: 5, 
   "product-type": 10,
 }
@@ -92,8 +91,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
 
     const bannerData = { type };
 
-    // ✅ HOME BANNER or OFFER ZONE
-    if (type === "homebanner" || type === "offer") {
+    if (type === "homebanner") {
       if (!req.file) {
         return res.status(400).json({ message: "Image file is required for this banner type" });
       }
@@ -196,8 +194,7 @@ router.delete("/", async (req, res) => {
     }
     const banners = await Banner.find(filter)
     banners.forEach((banner) => {
-      // Only delete physical files for 'homebanner' and 'offer' types
-      if ((banner.type === "homebanner" || banner.type === "offer") && banner.imageUrl) {
+      if ((banner.type === "homebanner") && banner.imageUrl) {
         const filePath = path.join(uploadDir, path.basename(banner.imageUrl))
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath)
@@ -226,7 +223,7 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ message: "Banner not found" })
     }
 
-    if ((banner.type === "homebanner" || banner.type === "offer") && banner.imageUrl) {
+    if ((banner.type === "homebanner") && banner.imageUrl) {
       const filePath = path.join(uploadDir, path.basename(banner.imageUrl))
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath)
