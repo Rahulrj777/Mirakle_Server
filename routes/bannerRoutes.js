@@ -54,7 +54,7 @@ router.get("/", async (req, res) => {
 
 const BANNER_LIMITS = {
   category: 3,
-  offer: 1,
+  offer: 2,
   homebanner: 5, 
   "product-type": 10,
 }
