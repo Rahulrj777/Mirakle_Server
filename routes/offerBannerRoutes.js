@@ -6,11 +6,9 @@ import OfferBanner from '../models/OfferBanner.js';
 
 const router = express.Router();
 
-// Create upload directory if not exists
-const uploadDir = 'uploads/offer-banners';
+const uploadDir = path.join(__dirname, '../uploads/offer-banners');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-// Multer config
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) =>
@@ -28,6 +26,7 @@ router.post('/upload', upload.single('image'), async (req, res) => {
     }
 
     const imageUrl = `/uploads/offer-banners/${req.file.filename}`;
+    console.log("File uploaded:", req.file);
 
     // Ensure slot is unique
     const existing = await OfferBanner.findOne({ slot });
@@ -57,7 +56,7 @@ router.delete('/:id', async (req, res) => {
     const offer = await OfferBanner.findById(req.params.id);
     if (!offer) return res.status(404).json({ error: 'Offer not found' });
 
-    const filePath = path.join(process.cwd(), offer.imageUrl.replace(/^\//, ''));
+    const filePath = path.resolve('.', offer.imageUrl);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }

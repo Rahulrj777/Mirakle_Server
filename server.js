@@ -8,7 +8,6 @@ import { fileURLToPath } from "url"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-// Import routes (assuming these paths are correct relative to app.js)
 import bannerRoutes from "./routes/bannerRoutes.js"
 import productRoutes from "./routes/productRoutes.js"
 import userRoutes from "./routes/userRoutes.js"
@@ -39,7 +38,6 @@ const corsOptions = {
 app.use(cors(corsOptions))
 app.use(express.json())
 
-// Serve static files from the 'uploads' directory
 app.use("/uploads", express.static(path.join(__dirname, "uploads")))
 
 app.use((req, res, next) => {
@@ -47,7 +45,6 @@ app.use((req, res, next) => {
   next()
 })
 
-// Use your routes
 app.use("/api/products", productRoutes)
 app.use("/api/banners", bannerRoutes)
 app.use("/api", userRoutes)
