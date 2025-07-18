@@ -3,12 +3,13 @@ import multer from 'multer';
 import OfferBanner from '../models/OfferBanner.js';
 import streamifier from 'streamifier';
 import cloudinary from '../utils/cloudinary.js';
+import { uploadOfferBanner, getOfferBanners, deleteOfferBanner } from '../controllers/offerBannerController.js';
 
 const router = express.Router();
 const upload = multer(); 
 
 // Upload Offer Banner to Cloudinary
-router.post("/upload", upload.single("image"), async (req, res) => {
+router.post("/upload", upload.single("image"), uploadOfferBanner, async (req, res) => {
   try {
     const { title, percentage, slot } = req.body;
     const file = req.file;
@@ -61,7 +62,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
 });
 
 // Get All Offer Banners
-router.get('/', async (req, res) => {
+router.get('/',getOfferBanners, async (req, res) => {
   try {
     const banners = await OfferBanner.find();
     console.log("📦 All Offer Banners Fetched:", banners.length);
@@ -73,7 +74,7 @@ router.get('/', async (req, res) => {
 });
 
 // Delete by ID
-router.delete('/:id', async (req, res) => {
+router.delete('/:id',deleteOfferBanner, async (req, res) => {
   try {
     const offer = await OfferBanner.findById(req.params.id);
     if (!offer) {

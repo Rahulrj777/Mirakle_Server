@@ -3,12 +3,13 @@ import multer from "multer";
 import streamifier from "streamifier";
 import cloudinary from "../utils/cloudinary.js";
 import HomeBanner from "../models/HomeBanner.js";
+import { uploadHomeBanner, getHomeBanners, deleteHomeBanner } from '../controllers/homeBannerController.js';
 
 const router = express.Router();
 const upload = multer();
 
 // ✅ Upload a single banner
-router.post("/upload", upload.single("image"), async (req, res) => {
+router.post("/upload", upload.single("image"), uploadHomeBanner, async (req, res) => {
   try {
     console.log("📤 Upload request received");
 
@@ -47,7 +48,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
 });
 
 // ✅ Get all banners
-router.get("/", async (req, res) => {
+router.get("/",getHomeBanners, async (req, res) => {
   try {
     console.log("📥 Fetching all banners");
     const banners = await HomeBanner.find().sort({ createdAt: -1 });
@@ -59,7 +60,7 @@ router.get("/", async (req, res) => {
 });
 
 // ✅ Delete a single banner by ID
-router.delete("/:id", async (req, res) => {
+router.delete("/:id",deleteHomeBanner, async (req, res) => {
   try {
     console.log(`🗑️ Deleting banner with ID: ${req.params.id}`);
 

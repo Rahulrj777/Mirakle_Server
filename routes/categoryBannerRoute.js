@@ -3,12 +3,13 @@ import multer from 'multer';
 import streamifier from 'streamifier';
 import cloudinary from '../utils/cloudinary.js';
 import CategoryBanner from '../models/CategoryBanner.js';
+import { uploadCategoryBanner, getCategoryBanners, deleteCategoryBanner } from '../controllers/categoryBannerController.js';
 
 const router = express.Router();
 const upload = multer();
 
 // ✅ UPLOAD BANNER
-router.post('/upload', upload.single('image'), async (req, res) => {
+router.post('/upload', upload.single('image'),uploadCategoryBanner, async (req, res) => {
   try {
     console.log('Uploading Category Banner:', req.body.title);
 
@@ -44,7 +45,7 @@ router.post('/upload', upload.single('image'), async (req, res) => {
 });
 
 // ✅ GET ALL BANNERS
-router.get('/', async (req, res) => {
+router.get('/',getCategoryBanners, async (req, res) => {
   try {
     const banners = await CategoryBanner.find();
     console.log(`Fetched ${banners.length} category banners`);
@@ -76,7 +77,7 @@ router.delete('/:id', async (req, res) => {
 });
 
 // ✅ DELETE ALL BANNERS
-router.delete('/', async (req, res) => {
+router.delete('/',deleteCategoryBanner, async (req, res) => {
   try {
     console.log('Attempting to delete all category banners');
     const banners = await CategoryBanner.find();
