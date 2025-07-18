@@ -4,13 +4,11 @@ const bannerSchema = new mongoose.Schema(
   {
     title: {
       type: String,
-      // ✅ MODIFIED: title is no longer required at the schema level.
-      // It will be conditionally required in the route handler.
       trim: true,
     },
     type: {
       type: String,
-      enum: ["homebanner", "category", "product-type", "offerbanner"],
+      enum: ["homebanner", "category", "product-type"],
       default: "homebanner",
     },
     imageUrl: {
@@ -18,7 +16,7 @@ const bannerSchema = new mongoose.Schema(
       required: true,
     },
     public_id: {
-      type: String, // For Cloudinary images (homebanner, category, offerbanner)
+      type: String, // For Cloudinary images (homebanner, category)
     },
     productId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -49,25 +47,15 @@ const bannerSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    percentage: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 100,
-    },
-    slot: {
-      type: String,
-      enum: ["left", "right"],
-      sparse: true, // Allows null values, but unique for non-null
-      unique: true, // Ensures only one banner per slot for offerbanner
-    },
+    // ❌ REMOVED: percentage field (now in OfferBanner)
+    // ❌ REMOVED: slot field (now in OfferBanner)
   },
   {
     timestamps: true,
   },
 )
 
-// ✅ NEW: Add a compound unique index for category banners to prevent duplicate titles
+// Keep the compound unique index for category banners
 bannerSchema.index({ type: 1, title: 1 }, { unique: true, partialFilterExpression: { type: "category" } })
 
 export default mongoose.model("Banner", bannerSchema)

@@ -5,14 +5,13 @@ import streamifier from "streamifier"
 import cloudinary from "../utils/cloudinary.js"
 
 const router = express.Router()
-const upload = multer() // Use memory storage for Cloudinary uploads
+const upload = multer({ storage: multer.memoryStorage() }) // Use memory storage for Cloudinary uploads
 
 // Upload Offer Banner to Cloudinary
 router.post("/upload", upload.single("image"), async (req, res) => {
   try {
-    const { title, percentage, slot } = req.body // ✅ percentage is now correctly received
+    const { title, percentage, slot } = req.body
     const file = req.file
-
     console.log("📥 Offer Upload Request Received:", { title, percentage, slot })
 
     if (!file) {
@@ -55,7 +54,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
 
     const banner = new OfferBanner({
       title,
-      percentage: Number(percentage) || 0, // ✅ Save percentage
+      percentage: Number(percentage) || 0,
       slot,
       imageUrl: result.secure_url,
       public_id: result.public_id,
@@ -66,6 +65,10 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     res.status(201).json(savedBanner)
   } catch (error) {
     console.error("🔥 Offer Upload Error:", error)
+    // Handle Mongoose duplicate key error specifically for unique slot
+    if (error.code === 11000 && error.keyPattern && error.keyPattern.slot) {
+      return res.status(409).json({ message: `An offer banner already exists for slot '${req.body.slot}'.` })
+    }
     res.status(500).json({ message: "Offer upload failed", error: error.message })
   }
 })
