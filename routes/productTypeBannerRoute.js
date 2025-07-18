@@ -3,14 +3,13 @@ import multer from 'multer';
 import streamifier from 'streamifier';
 import cloudinary from '../utils/cloudinary.js';
 import ProductTypeBanner from '../models/ProductTypeBanner.js';
-import { uploadProductTypeBanner, getProductTypeBanners, deleteProductTypeBanner } from '../controllers/productTypeBannerController.js';
 
 const router = express.Router();
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 // @desc    Upload new product type banner
-router.post('/upload', upload.single('image'),uploadProductTypeBanner, async (req, res) => {
+router.post('/upload', upload.single('image'), async (req, res) => {
   try {
     console.log('📤 Upload request received');
     console.log('Title:', req.body.title);
@@ -54,7 +53,7 @@ router.post('/upload', upload.single('image'),uploadProductTypeBanner, async (re
 });
 
 // @desc    Get all product type banners
-router.get('/',getProductTypeBanners, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const banners = await ProductTypeBanner.find();
     console.log('📥 Fetching all banners:', banners.length);
@@ -66,7 +65,7 @@ router.get('/',getProductTypeBanners, async (req, res) => {
 });
 
 // @desc    Delete a specific banner by ID
-router.delete('/:id',deleteProductTypeBanner, async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     console.log('🗑️ Delete request for ID:', req.params.id);
 
