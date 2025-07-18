@@ -4,10 +4,10 @@ const bannerSchema = new mongoose.Schema(
   {
     title: {
       type: String,
-      required: true,
+      // ✅ MODIFIED: title is no longer required at the schema level.
+      // It will be conditionally required in the route handler.
       trim: true,
     },
-    // ✅ UPDATED: type enum to reflect new categories
     type: {
       type: String,
       enum: ["homebanner", "category", "product-type", "offerbanner"],
@@ -49,7 +49,6 @@ const bannerSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    // ✅ NEW: Fields for offerbanner type
     percentage: {
       type: Number,
       default: 0,
@@ -67,5 +66,8 @@ const bannerSchema = new mongoose.Schema(
     timestamps: true,
   },
 )
+
+// ✅ NEW: Add a compound unique index for category banners to prevent duplicate titles
+bannerSchema.index({ type: 1, title: 1 }, { unique: true, partialFilterExpression: { type: "category" } })
 
 export default mongoose.model("Banner", bannerSchema)
