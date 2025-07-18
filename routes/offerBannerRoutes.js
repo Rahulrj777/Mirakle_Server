@@ -5,8 +5,7 @@ import streamifier from 'streamifier';
 import cloudinary from '../utils/cloudinary.js';
 
 const router = express.Router();
-const storage = multer.memoryStorage(); // buffer-based for stream upload
-const upload = multer(); // no storage — we’ll stream to Cloudinary
+const upload = multer(); 
 
 // Upload Offer Banner to Cloudinary
 router.post("/upload", upload.single("image"), async (req, res) => {
