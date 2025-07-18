@@ -11,30 +11,15 @@ const upload = multer(); // no storage — we’ll stream to Cloudinary
 // Upload Offer Banner to Cloudinary
 router.post("/upload", upload.single("image"), async (req, res) => {
   try {
+    console.log("🔍 Received fields:", req.body);
+    console.log("📸 File details:", req.file);
+
     const { title, percentage, slot } = req.body;
     const file = req.file;
 
     if (!file) {
       return res.status(400).json({ message: "No file uploaded" });
     }
-
-    const streamUpload = (fileBuffer) => {
-      return new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: "offer-banners",
-          },
-          (error, result) => {
-            if (result) {
-              resolve(result);
-            } else {
-              reject(error);
-            }
-          }
-        );
-        streamifier.createReadStream(fileBuffer).pipe(stream);
-      });
-    };
 
     const result = await streamUpload(file.buffer);
 
@@ -52,6 +37,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     res.status(500).json({ message: "Offer upload failed", error: error.message });
   }
 });
+
 
 // Get All Offer Banners
 router.get('/', async (req, res) => {
