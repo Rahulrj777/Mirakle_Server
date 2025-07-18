@@ -8,11 +8,13 @@ import { fileURLToPath } from "url"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-import bannerRoutes from "./routes/bannerRoutes.js"
+import homeBannerRoutes from './routes/homeBannerRoute.js';
+import categoryBannerRoutes from './routes/categoryBannerRoute.js';
+import offerBannerRoutes from './routes/offerBannerRoutes.js'
+import productTypeBannerRoutes from './routes/productTypeBannerRoute.js';
 import productRoutes from "./routes/productRoutes.js"
 import userRoutes from "./routes/userRoutes.js"
 import cartRoutes from "./routes/cartRoutes.js"
-import offerBannerRoutes from './routes/offerBannerRoutes.js'
 
 dotenv.config()
 
@@ -45,11 +47,13 @@ app.use((req, res, next) => {
   next()
 })
 
+app.use('/api/home-banners', homeBannerRoutes);
+app.use('/api/category-banners', categoryBannerRoutes);
+app.use('/api/offer-banners', offerBannerRoutes)
+app.use('/api/product-type-banners', productTypeBannerRoutes);
 app.use("/api/products", productRoutes)
-app.use("/api/banners", bannerRoutes)
 app.use("/api", userRoutes)
 app.use("/api/cart", cartRoutes)
-app.use('/api/offer-banners', offerBannerRoutes)
 
 mongoose
   .connect(process.env.MONGO_URI)
