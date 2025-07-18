@@ -56,24 +56,29 @@ router.get('/', async (req, res) => {
 });
 
 // ✅ DELETE ONE BANNER
-router.delete('/:id', async (req, res) => {
+router.delete("/:id", async (req, res) => {
   try {
-    console.log('Attempting to delete banner ID:', req.params.id);
-    const banner = await CategoryBanner.findById(req.params.id);
+    const banner = await Banner.findByIdAndDelete(req.params.id)
     if (!banner) {
-      console.warn('Banner not found');
-      return res.status(404).json({ message: 'Not found' });
+      return res.status(404).json({ message: "Banner not found" })
     }
 
-    await cloudinary.uploader.destroy(banner.public_id);
-    await banner.deleteOne();
-    console.log('Banner deleted:', req.params.id);
-    res.json({ message: 'Deleted successfully' });
-  } catch (err) {
-    console.error('Delete failed:', err);
-    res.status(500).json({ message: 'Failed to delete banner', error: err });
+    if ((banner.type === "homebanner") && banner.imageUrl) {
+      const filePath = path.join(uploadDir, path.basename(banner.imageUrl))
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath)
+      }
+    }
+    res.status(200).json({ message: "Banner deleted successfully" })
+
+  } catch (error) {
+    console.error("❌ Failed to delete banner:", error)
+    res.status(500).json({
+      message: "Failed to delete banner",
+      error: error.message,
+    })
   }
-});
+})
 
 // ✅ DELETE ALL BANNERS
 router.delete('/', async (req, res) => {
