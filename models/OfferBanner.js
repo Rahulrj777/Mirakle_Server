@@ -8,6 +8,23 @@ const offerBannerSchema = new mongoose.Schema(
     percentage: { type: Number, default: 0, min: 0, max: 100 },
     slot: { type: String, enum: ["left", "right"], required: true, unique: true },
     isActive: { type: Boolean, default: true },
+    // ✅ NEW: Fields for linking to products or categories
+    linkedProductId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      default: null,
+    },
+    linkedCategory: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    linkedDiscountUpTo: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
   },
   {
     timestamps: true,
