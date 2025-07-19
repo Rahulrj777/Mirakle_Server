@@ -7,12 +7,11 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 import Product from "../models/Product.js"
 import auth from "../middleware/auth.js"
-import cloudinary from "../utils/cloudinary.js" // ✅ NEW: Import cloudinary
-import streamifier from "streamifier" // ✅ NEW: Import streamifier
+import cloudinary from "../utils/cloudinary.js" // Import cloudinary
+import streamifier from "streamifier" // Import streamifier
 
 const router = express.Router()
 
-// Keep reviewUploadDir and reviewStorage for reviews
 const reviewUploadDir = path.join(__dirname, "../uploads/reviews")
 if (!fs.existsSync(reviewUploadDir)) fs.mkdirSync(reviewUploadDir, { recursive: true })
 
@@ -28,15 +27,13 @@ const reviewStorage = multer.diskStorage({
 
 const uploadReview = multer({ storage: reviewStorage })
 
-// ✅ MODIFIED: Use memory storage for product images for direct Cloudinary upload
 const uploadProduct = multer({ storage: multer.memoryStorage() })
 
-// ✅ NEW: Helper function to upload buffer to Cloudinary
 const streamUpload = (fileBuffer, folder) => {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
-        folder: folder, // e.g., "mirakle-products"
+        folder: folder,
       },
       (error, result) => {
         if (result) {
@@ -50,7 +47,6 @@ const streamUpload = (fileBuffer, folder) => {
   })
 }
 
-// GET all products with optional productType string filter
 router.get("/all-products", async (req, res) => {
   try {
     const { productType } = req.query
@@ -95,7 +91,6 @@ router.get("/related/:id", async (req, res) => {
   }
 })
 
-// ✅ MODIFIED: POST upload product to Cloudinary
 router.post("/upload-product", uploadProduct.array("images", 10), async (req, res) => {
   try {
     const { name, variants, description, details, keywords, productType } = req.body
@@ -122,11 +117,10 @@ router.post("/upload-product", uploadProduct.array("images", 10), async (req, re
     const uploadedImages = []
     for (const file of req.files) {
       try {
-        const result = await streamUpload(file.buffer, "mirakle-products") // Upload to 'mirakle-products' folder
+        const result = await streamUpload(file.buffer, "mirakle-products")
         uploadedImages.push({ url: result.secure_url, public_id: result.public_id })
       } catch (uploadErr) {
         console.error("❌ Cloudinary upload error:", uploadErr)
-        // If an image fails to upload, consider rolling back or handling gracefully
         return res.status(500).json({ message: "Failed to upload some images to Cloudinary", error: uploadErr.message })
       }
     }
@@ -139,7 +133,7 @@ router.post("/upload-product", uploadProduct.array("images", 10), async (req, re
       keywords: parsedKeywords,
       productType: productType,
       images: {
-        others: uploadedImages, // Store Cloudinary URLs and public_ids
+        others: uploadedImages,
       },
     })
 
@@ -379,7 +373,6 @@ router.delete("/:id/review/:reviewId", auth, async (req, res) => {
   }
 })
 
-// ✅ MODIFIED: PUT update product to include Cloudinary image handling
 router.put("/update/:id", auth, uploadProduct.array("images", 10), async (req, res) => {
   try {
     const { name, variants, description, details, removedImages, keywords, productType } = req.body
@@ -438,35 +431,63 @@ router.put("/update/:id", auth, uploadProduct.array("images", 10), async (req, r
       }
     }
 
-    // Handle removed images from Cloudinary
+    // --- Start of enhanced logging for image removal ---
+    console.log("--- Image Removal Process Start ---")
+    console.log("Product images before removal attempt:", JSON.stringify(product.images.others, null, 2))
+
     if (removedImages) {
+      let removedPublicIds
       try {
-        const removedPublicIds = JSON.parse(removedImages)
-        const imagesToKeep = []
-        for (const imgObj of product.images.others) {
-          if (removedPublicIds.includes(imgObj.public_id)) {
-            // Delete from Cloudinary
-            await cloudinary.uploader.destroy(imgObj.public_id)
-            console.log(`🗑️ Cloudinary image deleted: ${imgObj.public_id}`)
-          } else {
-            imagesToKeep.push(imgObj)
-          }
+        removedPublicIds = JSON.parse(removedImages)
+        console.log("Public IDs to remove (parsed from client):", removedPublicIds)
+        if (!Array.isArray(removedPublicIds)) {
+          console.error("❌ removedImages is not an array after parsing:", removedPublicIds)
+          return res.status(400).json({ message: "Invalid removedImages format: expected an array." })
         }
-        product.images.others = imagesToKeep
       } catch (err) {
-        return res.status(400).json({ message: "Invalid removedImages JSON or Cloudinary deletion error" })
+        console.error("❌ Error parsing removedImages JSON:", err)
+        return res.status(400).json({ message: "Invalid removedImages JSON" })
       }
+
+      const imagesToKeep = []
+      for (const imgObj of product.images.others) {
+        console.log(
+          `Checking image: ${imgObj.public_id}. Is it in removed list? ${removedPublicIds.includes(imgObj.public_id)}`,
+        )
+        if (removedPublicIds.includes(imgObj.public_id)) {
+          try {
+            const destroyResult = await cloudinary.uploader.destroy(imgObj.public_id)
+            console.log(`🗑️ Cloudinary image deletion result for ${imgObj.public_id}:`, destroyResult)
+            if (destroyResult.result !== "ok") {
+              console.warn(`⚠️ Cloudinary deletion for ${imgObj.public_id} was not 'ok':`, destroyResult)
+            }
+          } catch (cloudinaryErr) {
+            console.error(`❌ Failed to delete image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
+            // Decide if you want to stop the update or continue. For now, we'll continue.
+          }
+        } else {
+          imagesToKeep.push(imgObj)
+        }
+      }
+      product.images.others = imagesToKeep
+      console.log("Product images after removal filtering:", JSON.stringify(product.images.others, null, 2))
     }
+    // --- End of enhanced logging for image removal ---
 
     // Combine existing (kept) images with newly uploaded images
     product.images.others = [...product.images.others, ...newImages]
+    console.log("Product images after adding new images:", JSON.stringify(product.images.others, null, 2))
 
     // Ensure there's at least one image after update
     if (product.images.others.length === 0) {
       return res.status(400).json({ message: "Product must have at least one image." })
     }
 
+    // Mark the images.others array as modified to ensure Mongoose saves changes
+    product.markModified("images.others")
+
     await product.save()
+    console.log("Product saved successfully. Final images in DB:", JSON.stringify(product.images.others, null, 2))
     res.json({ message: "Product updated successfully", product })
   } catch (err) {
     console.error("Update error:", err)
@@ -484,14 +505,12 @@ router.put("/toggle-stock/:id", async (req, res) => {
   }
 })
 
-// ✅ MODIFIED: DELETE product and its images from Cloudinary
 router.delete("/delete/:id", async (req, res) => {
   try {
     const productId = req.params.id
     const product = await Product.findByIdAndDelete(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
-    // Delete images from Cloudinary
     if (product.images && product.images.others && product.images.others.length > 0) {
       for (const imgObj of product.images.others) {
         if (imgObj.public_id) {
@@ -500,7 +519,6 @@ router.delete("/delete/:id", async (req, res) => {
             console.log(`🗑️ Cloudinary image deleted: ${imgObj.public_id}`)
           } catch (cloudinaryErr) {
             console.error(`❌ Failed to delete image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
-            // Continue with deletion of other images/product even if one fails
           }
         }
       }
