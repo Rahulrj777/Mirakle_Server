@@ -415,7 +415,6 @@ router.put("/update/:id", auth, uploadProduct.array("images", 10), async (req, r
       }
     }
 
-    // Handle new image uploads to Cloudinary
     const newImages = []
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
@@ -431,17 +430,16 @@ router.put("/update/:id", auth, uploadProduct.array("images", 10), async (req, r
       }
     }
 
-    // --- Start of enhanced logging for image removal ---
     console.log("--- Image Removal Process Start ---")
     console.log("Product images before removal attempt:", JSON.stringify(product.images.others, null, 2))
 
     if (removedImages) {
-      let removedPublicIds
+      let parsedRemovedPublicIds
       try {
-        removedPublicIds = JSON.parse(removedImages)
-        console.log("Server received public IDs to remove (parsed from client):", removedPublicIds)
-        if (!Array.isArray(removedPublicIds)) {
-          console.error("❌ removedImages is not an array after parsing:", removedPublicIds)
+        parsedRemovedPublicIds = JSON.parse(removedImages)
+        console.log("Server received public IDs to remove (parsed from client):", parsedRemovedPublicIds)
+        if (!Array.isArray(parsedRemovedPublicIds)) {
+          console.error("❌ removedImages is not an array after parsing:", parsedRemovedPublicIds)
           return res.status(400).json({ message: "Invalid removedImages format: expected an array." })
         }
       } catch (err) {
@@ -452,9 +450,9 @@ router.put("/update/:id", auth, uploadProduct.array("images", 10), async (req, r
       const imagesToKeep = []
       for (const imgObj of product.images.others) {
         console.log(
-          `Processing existing image: URL=${imgObj.url}, Public ID=${imgObj.public_id}. Is it in removed list? ${removedPublicIds.includes(imgObj.public_id)}`,
+          `Processing existing image: URL=${imgObj.url}, Public ID=${imgObj.public_id}. Is it in removed list? ${parsedRemovedPublicIds.includes(imgObj.public_id)}`,
         )
-        if (removedPublicIds.includes(imgObj.public_id)) {
+        if (parsedRemovedPublicIds.includes(imgObj.public_id)) {
           console.log(`Attempting to delete Cloudinary image with public_id: ${imgObj.public_id}`)
           try {
             const destroyResult = await cloudinary.uploader.destroy(imgObj.public_id)
@@ -464,7 +462,6 @@ router.put("/update/:id", auth, uploadProduct.array("images", 10), async (req, r
             }
           } catch (cloudinaryErr) {
             console.error(`❌ Failed to delete image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
-            // Continue processing other images even if one fails, but log the error
           }
         } else {
           console.log(`Keeping image: ${imgObj.public_id}`)
@@ -474,18 +471,14 @@ router.put("/update/:id", auth, uploadProduct.array("images", 10), async (req, r
       product.images.others = imagesToKeep
       console.log("Product images array after filtering for removal:", JSON.stringify(product.images.others, null, 2))
     }
-    // --- End of enhanced logging for image removal ---
 
-    // Combine existing (kept) images with newly uploaded images
     product.images.others = [...product.images.others, ...newImages]
     console.log("Product images after adding new images:", JSON.stringify(product.images.others, null, 2))
 
-    // Ensure there's at least one image after update
     if (product.images.others.length === 0) {
       return res.status(400).json({ message: "Product must have at least one image." })
     }
 
-    // Mark the images.others array as modified to ensure Mongoose saves changes
     product.markModified("images.others")
 
     await product.save()
