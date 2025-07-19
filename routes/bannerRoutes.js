@@ -4,8 +4,8 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import Banner from "../models/Banner.js"
-import cloudinary from "../utils/cloudinary.js" // Import Cloudinary
-import streamifier from "streamifier" // For streaming to Cloudinary
+import cloudinary from "../utils/cloudinary.js" 
+import streamifier from "streamifier" 
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -50,10 +50,10 @@ router.get("/", async (req, res) => {
 })
 
 const BANNER_LIMITS = {
-  homebanner: 5, // ✅ UPDATED: Limit for homebanner
-  category: 3, // ✅ UPDATED: Limit for category
-  offerbanner: 2, // ✅ UPDATED: Limit for offerbanner
-  "product-type": 10, // ✅ UPDATED: Limit for product-type
+  homebanner: 5,
+  category: 3, 
+  offerbanner: 2, 
+  "product-type": 10,
 }
 
 // Helper function to upload buffer to Cloudinary
@@ -185,7 +185,6 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     res.status(201).json(savedBanner)
   } catch (error) {
     console.error("❌ Upload error:", error)
-    // Handle Mongoose duplicate key error specifically
     if (error.code === 11000) {
       if (error.keyPattern && error.keyPattern.slot) {
         return res.status(409).json({ message: "An offer banner already exists for this slot." })
