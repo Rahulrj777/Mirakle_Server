@@ -29,7 +29,6 @@ const productSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
     images: {
-      // ✅ MODIFIED: Store objects with url and public_id for Cloudinary
       others: [{ url: { type: String }, public_id: { type: String } }],
     },
     description: { type: String, default: "" },
