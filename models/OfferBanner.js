@@ -2,13 +2,32 @@ import mongoose from "mongoose"
 
 const offerBannerSchema = new mongoose.Schema(
   {
-    title: { type: String, required: true, trim: true },
-    imageUrl: { type: String, required: true },
-    public_id: { type: String, required: true },
-    percentage: { type: Number, default: 0, min: 0, max: 100 },
-    slot: { type: String, enum: ["left", "right"], required: true, unique: true },
-    isActive: { type: Boolean, default: true },
-    // ✅ NEW: Fields for linking to products or categories
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    imageUrl: {
+      type: String,
+      required: true,
+    },
+    public_id: {
+      type: String, // For Cloudinary images
+      required: true,
+    },
+    percentage: {
+      type: Number,
+      required: true,
+      min: 0,
+      max: 100,
+    },
+    slot: {
+      type: String,
+      enum: ["left", "right"],
+      required: true,
+      unique: true, // Ensure only one banner per slot
+    },
+    // Linking options (only one should be present at a time)
     linkedProductId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
@@ -21,9 +40,18 @@ const offerBannerSchema = new mongoose.Schema(
     },
     linkedDiscountUpTo: {
       type: Number,
-      default: 0,
       min: 0,
       max: 100,
+      default: null, // Use null to indicate not set, 0 is a valid discount
+    },
+    linkedUrl: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
     },
   },
   {

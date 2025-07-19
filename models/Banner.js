@@ -47,8 +47,6 @@ const bannerSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    // ❌ REMOVED: percentage field (now in OfferBanner)
-    // ❌ REMOVED: slot field (now in OfferBanner)
   },
   {
     timestamps: true,
