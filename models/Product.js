@@ -29,9 +29,10 @@ const productSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
     images: {
-      others: [{ url: { type: String }, public_id: { type: String } }],
+      others: [{ type: String }],
     },
     description: { type: String, default: "" },
+    // ✅ Reverted: productType is now a simple string
     productType: { type: String, default: "" },
     variants: [variantSchema],
     discountPercent: { type: Number, default: 0 },
