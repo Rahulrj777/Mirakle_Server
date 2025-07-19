@@ -5,7 +5,7 @@ const variantSchema = new mongoose.Schema(
     size: { type: String },
     weight: {
       value: { type: Number, default: 0 },
-      unit: { type: String, enum: ["g", "ml", "li"], default: "g" },
+      unit: { type: String, enum: ["g", "ml", "li", "kg"], default: "g" },
     },
     price: { type: Number },
     discountPercent: { type: Number, default: 0 },
@@ -19,7 +19,7 @@ const reviewSchema = new mongoose.Schema({
   name: { type: String, required: true },
   rating: { type: Number, required: true },
   comment: { type: String, required: true },
-  images: [{ type: String }],
+  images: [{ type: String }], // Review images still stored locally
   likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   dislikes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   createdAt: { type: Date, default: Date.now },
@@ -29,10 +29,10 @@ const productSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
     images: {
-      others: [{ type: String }],
+      // ✅ MODIFIED: Store objects with url and public_id for Cloudinary
+      others: [{ url: { type: String }, public_id: { type: String } }],
     },
     description: { type: String, default: "" },
-    // ✅ Reverted: productType is now a simple string
     productType: { type: String, default: "" },
     variants: [variantSchema],
     discountPercent: { type: Number, default: 0 },

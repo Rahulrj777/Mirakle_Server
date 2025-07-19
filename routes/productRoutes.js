@@ -7,24 +7,12 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 import Product from "../models/Product.js"
 import auth from "../middleware/auth.js"
+import cloudinary from "../utils/cloudinary.js" // ✅ NEW: Import cloudinary
+import streamifier from "streamifier" // ✅ NEW: Import streamifier
 
 const router = express.Router()
 
-const productUploadDir = path.join(__dirname, "../uploads/products")
-if (!fs.existsSync(productUploadDir)) fs.mkdirSync(productUploadDir, { recursive: true })
-
-const productStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, productUploadDir)
-  },
-  filename: (req, file, cb) => {
-    const uniqueName = `${Date.now()}-${file.originalname}`
-    cb(null, uniqueName)
-  },
-})
-
-const uploadProduct = multer({ storage: productStorage })
-
+// Keep reviewUploadDir and reviewStorage for reviews
 const reviewUploadDir = path.join(__dirname, "../uploads/reviews")
 if (!fs.existsSync(reviewUploadDir)) fs.mkdirSync(reviewUploadDir, { recursive: true })
 
@@ -40,18 +28,38 @@ const reviewStorage = multer.diskStorage({
 
 const uploadReview = multer({ storage: reviewStorage })
 
-// ✅ MODIFIED: GET all products with optional productType string filter
+// ✅ MODIFIED: Use memory storage for product images for direct Cloudinary upload
+const uploadProduct = multer({ storage: multer.memoryStorage() })
+
+// ✅ NEW: Helper function to upload buffer to Cloudinary
+const streamUpload = (fileBuffer, folder) => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: folder, // e.g., "mirakle-products"
+      },
+      (error, result) => {
+        if (result) {
+          resolve(result)
+        } else {
+          reject(error)
+        }
+      },
+    )
+    streamifier.createReadStream(fileBuffer).pipe(stream)
+  })
+}
+
+// GET all products with optional productType string filter
 router.get("/all-products", async (req, res) => {
   try {
     const { productType } = req.query
     const filter = {}
 
     if (productType) {
-      // Filter by productType string directly
       filter.productType = productType
     }
 
-    // No populate needed as productType is a string
     const products = await Product.find(filter)
     res.json(products)
   } catch (err) {
@@ -87,16 +95,18 @@ router.get("/related/:id", async (req, res) => {
   }
 })
 
-// ✅ MODIFIED: POST upload product to include productType as string
+// ✅ MODIFIED: POST upload product to Cloudinary
 router.post("/upload-product", uploadProduct.array("images", 10), async (req, res) => {
   try {
-    const { name, variants, description, details, keywords, productType } = req.body // ✅ Get productType as string
+    const { name, variants, description, details, keywords, productType } = req.body
     console.log("🔍 Body:", req.body)
-    console.log("🖼 Images:", req.files)
+    console.log("🖼 Files received for upload:", req.files?.length)
 
     if (!name || !variants || !productType) {
-      // ✅ Validate productType string
       return res.status(400).json({ message: "Product name, variants, and product type are required" })
+    }
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: "At least one image is required for the product" })
     }
 
     let parsedVariants, parsedDetails, parsedKeywords
@@ -109,7 +119,17 @@ router.post("/upload-product", uploadProduct.array("images", 10), async (req, re
       return res.status(400).json({ message: "Invalid JSON in variants, details, or keywords" })
     }
 
-    const images = req.files.map((file) => `/uploads/products/${file.filename}`)
+    const uploadedImages = []
+    for (const file of req.files) {
+      try {
+        const result = await streamUpload(file.buffer, "mirakle-products") // Upload to 'mirakle-products' folder
+        uploadedImages.push({ url: result.secure_url, public_id: result.public_id })
+      } catch (uploadErr) {
+        console.error("❌ Cloudinary upload error:", uploadErr)
+        // If an image fails to upload, consider rolling back or handling gracefully
+        return res.status(500).json({ message: "Failed to upload some images to Cloudinary", error: uploadErr.message })
+      }
+    }
 
     const newProduct = new Product({
       title: name,
@@ -117,16 +137,16 @@ router.post("/upload-product", uploadProduct.array("images", 10), async (req, re
       description: description || "",
       details: parsedDetails,
       keywords: parsedKeywords,
-      productType: productType, // ✅ Assign productType string
+      productType: productType,
       images: {
-        others: images,
+        others: uploadedImages, // Store Cloudinary URLs and public_ids
       },
     })
 
     await newProduct.save()
     res.status(201).json(newProduct)
   } catch (err) {
-    console.error("❌ Upload error:", err)
+    console.error("❌ Product upload error:", err)
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
@@ -262,7 +282,6 @@ router.post("/create", async (req, res) => {
   }
 })
 
-// ✅ MODIFIED: Removed populate as productType is a string
 router.get("/", async (req, res) => {
   try {
     const products = await Product.find()
@@ -360,16 +379,14 @@ router.delete("/:id/review/:reviewId", auth, async (req, res) => {
   }
 })
 
-// ✅ MODIFIED: PUT update product to include productType as string
+// ✅ MODIFIED: PUT update product to include Cloudinary image handling
 router.put("/update/:id", auth, uploadProduct.array("images", 10), async (req, res) => {
   try {
-    const { name, variants, description, details, removedImages, keywords, productType } = req.body // ✅ Get productType as string
+    const { name, variants, description, details, removedImages, keywords, productType } = req.body
     const product = await Product.findById(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
-    // Assign productType string directly
-    product.productType = productType || product.productType // ✅ Assign productType string
-
+    product.productType = productType || product.productType
     product.title = name?.trim() || product.title
     product.description = description?.trim() || ""
 
@@ -405,26 +422,50 @@ router.put("/update/:id", auth, uploadProduct.array("images", 10), async (req, r
       }
     }
 
-    const newImages = req.files?.map((file) => `/uploads/products/${file.filename}`) || []
-    console.log("🖼 Uploaded Files:", req.files)
-
-    if (removedImages) {
-      try {
-        const removed = JSON.parse(removedImages)
-        product.images.others = product.images.others.filter((img) => {
-          if (removed.includes(img)) {
-            const fullPath = path.join(productUploadDir, path.basename(img))
-            if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
-            return false
-          }
-          return true
-        })
-      } catch (err) {
-        return res.status(400).json({ message: "Invalid removedImages JSON" })
+    // Handle new image uploads to Cloudinary
+    const newImages = []
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        try {
+          const result = await streamUpload(file.buffer, "mirakle-products")
+          newImages.push({ url: result.secure_url, public_id: result.public_id })
+        } catch (uploadErr) {
+          console.error("❌ Cloudinary upload error during update:", uploadErr)
+          return res
+            .status(500)
+            .json({ message: "Failed to upload new images to Cloudinary", error: uploadErr.message })
+        }
       }
     }
 
+    // Handle removed images from Cloudinary
+    if (removedImages) {
+      try {
+        const removedPublicIds = JSON.parse(removedImages)
+        const imagesToKeep = []
+        for (const imgObj of product.images.others) {
+          if (removedPublicIds.includes(imgObj.public_id)) {
+            // Delete from Cloudinary
+            await cloudinary.uploader.destroy(imgObj.public_id)
+            console.log(`🗑️ Cloudinary image deleted: ${imgObj.public_id}`)
+          } else {
+            imagesToKeep.push(imgObj)
+          }
+        }
+        product.images.others = imagesToKeep
+      } catch (err) {
+        return res.status(400).json({ message: "Invalid removedImages JSON or Cloudinary deletion error" })
+      }
+    }
+
+    // Combine existing (kept) images with newly uploaded images
     product.images.others = [...product.images.others, ...newImages]
+
+    // Ensure there's at least one image after update
+    if (product.images.others.length === 0) {
+      return res.status(400).json({ message: "Product must have at least one image." })
+    }
+
     await product.save()
     res.json({ message: "Product updated successfully", product })
   } catch (err) {
@@ -443,18 +484,31 @@ router.put("/toggle-stock/:id", async (req, res) => {
   }
 })
 
+// ✅ MODIFIED: DELETE product and its images from Cloudinary
 router.delete("/delete/:id", async (req, res) => {
   try {
-    const product = await Product.findByIdAndDelete(req.params.id)
+    const productId = req.params.id
+    const product = await Product.findByIdAndDelete(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
-    if (product.images && product.images.others) {
-      for (const imgPath of product.images.others) {
-        const fullPath = path.join(productUploadDir, path.basename(imgPath))
-        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+
+    // Delete images from Cloudinary
+    if (product.images && product.images.others && product.images.others.length > 0) {
+      for (const imgObj of product.images.others) {
+        if (imgObj.public_id) {
+          try {
+            await cloudinary.uploader.destroy(imgObj.public_id)
+            console.log(`🗑️ Cloudinary image deleted: ${imgObj.public_id}`)
+          } catch (cloudinaryErr) {
+            console.error(`❌ Failed to delete image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
+            // Continue with deletion of other images/product even if one fails
+          }
+        }
       }
     }
+
     res.json({ message: "Product deleted" })
   } catch (err) {
+    console.error("Delete product error:", err)
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
