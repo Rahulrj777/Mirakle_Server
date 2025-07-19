@@ -4,8 +4,8 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import Banner from "../models/Banner.js"
-import cloudinary from "../utils/cloudinary.js"
-import streamifier from "streamifier"
+import cloudinary from "../utils/cloudinary.js" // Import Cloudinary
+import streamifier from "streamifier" // For streaming to Cloudinary
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -36,8 +36,7 @@ router.get("/", async (req, res) => {
   try {
     const { type } = req.query
     const filter = {}
-    // ✅ MODIFIED: Only filter by types handled by this route
-    if (type && ["homebanner", "category", "product-type"].includes(type)) {
+    if (type) {
       filter.type = type
     }
     const banners = await Banner.find(filter).sort({ createdAt: -1 })
@@ -51,11 +50,13 @@ router.get("/", async (req, res) => {
 })
 
 const BANNER_LIMITS = {
-  homebanner: 5,
-  category: 3,
-  "product-type": 10,
+  homebanner: 5, // ✅ UPDATED: Limit for homebanner
+  category: 3, // ✅ UPDATED: Limit for category
+  offerbanner: 2, // ✅ UPDATED: Limit for offerbanner
+  "product-type": 10, // ✅ UPDATED: Limit for product-type
 }
 
+// Helper function to upload buffer to Cloudinary
 const streamUpload = (fileBuffer, folder) => {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
@@ -79,13 +80,15 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     const {
       type,
       productId,
-      productImageUrl, // This will now be a Cloudinary URL for product-type banners
+      productImageUrl,
       title,
       price,
       oldPrice,
       discountPercent,
       weightValue,
       weightUnit,
+      percentage,
+      slot,
     } = req.body
     const file = req.file
 
@@ -96,11 +99,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       return res.status(400).json({ message: "Banner type is required" })
     }
 
-    // ✅ NEW: Validate type against allowed types for this route
-    if (!["homebanner", "category", "product-type"].includes(type)) {
-      return res.status(400).json({ message: "Invalid banner type for this endpoint." })
-    }
-
+    // Check limits for specific banner types
     if (BANNER_LIMITS[type]) {
       const currentBannerCount = await Banner.countDocuments({ type })
       if (currentBannerCount >= BANNER_LIMITS[type]) {
@@ -114,6 +113,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       if (!file) {
         return res.status(400).json({ message: "Image file is required for homebanner type" })
       }
+      // No title needed for homebanner, as per new model/logic
       const result = await streamUpload(file.buffer, "home-banners")
       bannerData.imageUrl = result.secure_url
       bannerData.public_id = result.public_id
@@ -124,6 +124,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       if (!title) {
         return res.status(400).json({ message: "Title is required for category banners" })
       }
+      // ✅ NEW: Check for duplicate category title
       const existingCategoryBanner = await Banner.findOne({ type: "category", title: title.trim() })
       if (existingCategoryBanner) {
         return res.status(400).json({ message: `A category banner with title '${title}' already exists.` })
@@ -132,22 +133,41 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       const result = await streamUpload(file.buffer, "category-banners")
       bannerData.imageUrl = result.secure_url
       bannerData.public_id = result.public_id
+      bannerData.title = title.trim() // Title is the category name
+    } else if (type === "offerbanner") {
+      if (!file) {
+        return res.status(400).json({ message: "Image file is required for offer banners" })
+      }
+      if (!title || !slot) {
+        return res.status(400).json({ message: "Title and slot are required for offer banners" })
+      }
+      // ✅ NEW: Check for duplicate offer slot (already in model, but explicit check here)
+      const existingOfferBanner = await Banner.findOne({ type: "offerbanner", slot })
+      if (existingOfferBanner) {
+        return res.status(400).json({ message: `An offer banner already exists for slot '${slot}'.` })
+      }
+
+      const result = await streamUpload(file.buffer, "offer-banners")
+      bannerData.imageUrl = result.secure_url
+      bannerData.public_id = result.public_id
       bannerData.title = title.trim()
+      bannerData.percentage = Number(percentage) || 0
+      bannerData.slot = slot
     } else if (type === "product-type") {
-      // ✅ FIX: productImageUrl is now expected to be a Cloudinary URL
+      // Product-type banners still reference local product images, no file upload here
       if (!productId || !productImageUrl || !title || !price) {
         return res.status(400).json({
           message: "Product ID, image URL, title, and price are required for this banner type",
         })
       }
+      // ✅ Existing: Check for duplicate product ID for product-type banners
       const existingProductBanner = await Banner.findOne({ type: "product-type", productId })
       if (existingProductBanner) {
         return res.status(400).json({ message: "Banner for this product already exists." })
       }
 
       bannerData.productId = productId
-      bannerData.imageUrl = productImageUrl // This is now a Cloudinary URL
-      // public_id is not stored for product-type banners as they reference existing product images
+      bannerData.imageUrl = productImageUrl // This is a local path from product upload
       bannerData.title = title.trim()
       bannerData.price = Number(price)
       bannerData.oldPrice = Number(oldPrice) || 0
@@ -155,6 +175,8 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       if (weightValue && weightUnit) {
         bannerData.weight = { value: Number(weightValue), unit: weightUnit }
       }
+    } else {
+      return res.status(400).json({ message: "Invalid banner type" })
     }
 
     const banner = new Banner(bannerData)
@@ -163,7 +185,11 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     res.status(201).json(savedBanner)
   } catch (error) {
     console.error("❌ Upload error:", error)
+    // Handle Mongoose duplicate key error specifically
     if (error.code === 11000) {
+      if (error.keyPattern && error.keyPattern.slot) {
+        return res.status(409).json({ message: "An offer banner already exists for this slot." })
+      }
       if (error.keyPattern && error.keyPattern.title && error.keyPattern.type) {
         return res.status(409).json({ message: "A category banner with this title already exists." })
       }
@@ -181,20 +207,17 @@ router.delete("/", async (req, res) => {
     const { type } = req.query
     let filter = {}
 
-    // ✅ MODIFIED: Only delete types handled by this route
-    if (type && ["homebanner", "category", "product-type"].includes(type)) {
+    if (type && type !== "all") {
       filter = { type }
-    } else if (type === "all") {
-      // If 'all' is specified, delete all types handled by this route
-      filter = { type: { $in: ["homebanner", "category", "product-type"] } }
-    } else {
-      return res.status(400).json({ message: "Invalid or missing banner type for deletion." })
     }
 
     const bannersToDelete = await Banner.find(filter)
 
     for (const banner of bannersToDelete) {
-      if ((banner.type === "homebanner" || banner.type === "category") && banner.public_id) {
+      if (
+        (banner.type === "homebanner" || banner.type === "category" || banner.type === "offerbanner") &&
+        banner.public_id
+      ) {
         await cloudinary.uploader.destroy(banner.public_id)
         console.log(`🗑️ Cloudinary image deleted: ${banner.public_id}`)
       }
@@ -205,7 +228,7 @@ router.delete("/", async (req, res) => {
     const message =
       type && type !== "all"
         ? `All ${type} banners deleted successfully (${result.deletedCount} banners)`
-        : `All banners (excluding offer banners) deleted successfully (${result.deletedCount} banners)`
+        : `All banners deleted successfully (${result.deletedCount} banners)`
 
     res.json({ message, deletedCount: result.deletedCount })
   } catch (error) {
@@ -225,8 +248,10 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ message: "Banner not found" })
     }
 
-    // ✅ MODIFIED: Only delete from Cloudinary if it's a type managed by this route
-    if ((banner.type === "homebanner" || banner.type === "category") && banner.public_id) {
+    if (
+      (banner.type === "homebanner" || banner.type === "category" || banner.type === "offerbanner") &&
+      banner.public_id
+    ) {
       await cloudinary.uploader.destroy(banner.public_id)
       console.log(`🗑️ Cloudinary image deleted: ${banner.public_id}`)
     }
