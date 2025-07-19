@@ -7,8 +7,8 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 import Product from "../models/Product.js"
 import auth from "../middleware/auth.js"
-import cloudinary from "../utils/cloudinary.js" // Import cloudinary
-import streamifier from "streamifier" // Import streamifier
+import cloudinary from "../utils/cloudinary.js"
+import streamifier from "streamifier"
 
 const router = express.Router()
 
@@ -439,7 +439,7 @@ router.put("/update/:id", auth, uploadProduct.array("images", 10), async (req, r
       let removedPublicIds
       try {
         removedPublicIds = JSON.parse(removedImages)
-        console.log("Public IDs to remove (parsed from client):", removedPublicIds)
+        console.log("Server received public IDs to remove (parsed from client):", removedPublicIds)
         if (!Array.isArray(removedPublicIds)) {
           console.error("❌ removedImages is not an array after parsing:", removedPublicIds)
           return res.status(400).json({ message: "Invalid removedImages format: expected an array." })
@@ -452,25 +452,27 @@ router.put("/update/:id", auth, uploadProduct.array("images", 10), async (req, r
       const imagesToKeep = []
       for (const imgObj of product.images.others) {
         console.log(
-          `Checking image: ${imgObj.public_id}. Is it in removed list? ${removedPublicIds.includes(imgObj.public_id)}`,
+          `Processing existing image: URL=${imgObj.url}, Public ID=${imgObj.public_id}. Is it in removed list? ${removedPublicIds.includes(imgObj.public_id)}`,
         )
         if (removedPublicIds.includes(imgObj.public_id)) {
+          console.log(`Attempting to delete Cloudinary image with public_id: ${imgObj.public_id}`)
           try {
             const destroyResult = await cloudinary.uploader.destroy(imgObj.public_id)
-            console.log(`🗑️ Cloudinary image deletion result for ${imgObj.public_id}:`, destroyResult)
+            console.log(`Cloudinary deletion result for ${imgObj.public_id}:`, destroyResult)
             if (destroyResult.result !== "ok") {
-              console.warn(`⚠️ Cloudinary deletion for ${imgObj.public_id} was not 'ok':`, destroyResult)
+              console.warn(`⚠️ Cloudinary deletion for ${imgObj.public_id} was not 'ok'. Result:`, destroyResult)
             }
           } catch (cloudinaryErr) {
             console.error(`❌ Failed to delete image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
-            // Decide if you want to stop the update or continue. For now, we'll continue.
+            // Continue processing other images even if one fails, but log the error
           }
         } else {
+          console.log(`Keeping image: ${imgObj.public_id}`)
           imagesToKeep.push(imgObj)
         }
       }
       product.images.others = imagesToKeep
-      console.log("Product images after removal filtering:", JSON.stringify(product.images.others, null, 2))
+      console.log("Product images array after filtering for removal:", JSON.stringify(product.images.others, null, 2))
     }
     // --- End of enhanced logging for image removal ---
 
