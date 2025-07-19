@@ -167,7 +167,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       }
 
       bannerData.productId = productId
-      bannerData.imageUrl = productImageUrl // This is a local path from product upload
+      bannerData.imageUrl = productImageUrl 
       bannerData.title = title.trim()
       bannerData.price = Number(price)
       bannerData.oldPrice = Number(oldPrice) || 0

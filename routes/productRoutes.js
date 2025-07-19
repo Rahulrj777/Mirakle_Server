@@ -415,7 +415,6 @@ router.put("/update/:id", auth, uploadProduct.array("images", 10), async (req, r
       }
     }
 
-    // Handle new image uploads to Cloudinary
     const newImages = []
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
