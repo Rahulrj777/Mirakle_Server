@@ -1,48 +1,43 @@
-import mongoose from "mongoose"
+const mongoose = require("mongoose")
 
-const variantSchema = new mongoose.Schema(
-  {
-    size: { type: String },
-    weight: {
-      value: { type: Number, default: 0 },
-      unit: { type: String, enum: ["g", "ml", "li"], default: "g" },
-    },
-    price: { type: Number },
-    discountPercent: { type: Number, default: 0 },
-    stock: { type: Number, default: 0 },
-  },
-  { _id: false },
-)
-
-const reviewSchema = new mongoose.Schema({
-  user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  name: { type: String, required: true },
-  rating: { type: Number, required: true },
-  comment: { type: String, required: true },
-  images: [{ type: String }],
-  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  dislikes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  createdAt: { type: Date, default: Date.now },
+const productVariantSchema = new mongoose.Schema({
+  size: { type: String, required: true },
+  color: { type: String, required: true },
+  price: { type: Number, required: true },
+  discountPercent: { type: Number, default: 0 },
+  stock: { type: Number, required: true },
+  sku: { type: String, unique: true, sparse: true }, // SKU can be optional but unique if present
 })
 
-const productSchema = new mongoose.Schema(
-  {
-    title: { type: String, required: true },
-    images: {
-      others: [{ url: { type: String }, public_id: { type: String } }],
-    },
-    description: { type: String, default: "" },
-    productType: { type: String, default: "" },
-    variants: [variantSchema],
-    discountPercent: { type: Number, default: 0 },
-    oldPrice: { type: Number, default: 0 },
-    isOutOfStock: { type: Boolean, default: false },
-    details: { type: Object, default: {} },
-    keywords: [{ type: String }],
-    reviews: [reviewSchema],
+const productSchema = new mongoose.Schema({
+  title: { type: String, required: true, trim: true },
+  description: { type: String, required: true },
+  productType: { type: String, required: true, trim: true }, // e.g., "Electronics", "Clothing"
+  category: { type: String, trim: true }, // e.g., "Smartphones", "T-shirts"
+  subCategory: { type: String, trim: true },
+  brand: { type: String, trim: true },
+  variants: [productVariantSchema], // Array of variants
+  images: {
+    thumbnail: { url: String, public_id: String },
+    others: [{ url: String, public_id: String }],
   },
-  { timestamps: true },
-)
+  keywords: [{ type: String, trim: true }], // For search optimization
+  isFeatured: { type: Boolean, default: false },
+  isNewArrival: { type: Boolean, default: false },
+  isBestSeller: { type: Boolean, default: false },
+  isOutOfStock: { type: Boolean, default: false },
+  averageRating: { type: Number, default: 0 },
+  numberOfReviews: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+})
+
+// Middleware to update `updatedAt` on save
+productSchema.pre("save", function (next) {
+  this.updatedAt = Date.now()
+  next()
+})
 
 const Product = mongoose.model("Product", productSchema)
-export default Product
+
+module.exports = Product
