@@ -16,6 +16,7 @@ import userRoutes from "./routes/userRoutes.js"
 import cartRoutes from "./routes/cartRoutes.js"
 import offerBannerRoutes from "./routes/offerBannerRoutes.js"
 import adminRoutes from "./routes/adminRoutes.js";
+import locationRoutes from './routes/locationRoutes.js';
 
 const app = express()
 
@@ -53,6 +54,7 @@ app.use("/api", userRoutes)
 app.use("/api/cart", cartRoutes)
 app.use("/api/offer-banners", offerBannerRoutes)
 app.use("/api/admin", adminRoutes);
+app.use('/api/location', locationRoutes);
 
 app.get("/", (req, res) => {
   res.send("Mirakle Server is Running")

@@ -2,7 +2,6 @@ import Admin from "../models/Admin.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
-// Optional: import sendEmail from "../utils/sendEmail.js";
 
 const generateToken = (id) => {
   return jwt.sign({ id, role: "admin" }, process.env.ADMIN_JWT_SECRET, { expiresIn: "2h" });
