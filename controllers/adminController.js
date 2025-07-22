@@ -11,16 +11,24 @@ const generateToken = (id) => {
 export const adminSignup = async (req, res) => {
   const { name, email, password } = req.body;
 
-  const exist = await Admin.findOne({ email });
-  if (exist) return res.status(400).json({ message: "Admin already exists" });
+  // Check if an admin already exists in DB
+  const existingAdmin = await Admin.findOne();
+  if (existingAdmin) {
+    return res.status(403).json({ message: "Admin already exists. Signup disabled." });
+  }
 
   const hashed = await bcrypt.hash(password, 10);
   const admin = new Admin({ name, email, password: hashed });
 
   await admin.save();
+
   const token = generateToken(admin._id);
 
-  res.status(201).json({ message: "Admin registered", token, admin: { id: admin._id, name, email } });
+  res.status(201).json({
+    message: "Admin registered successfully",
+    token,
+    admin: { id: admin._id, name, email }
+  });
 };
 
 export const adminLogin = async (req, res) => {
