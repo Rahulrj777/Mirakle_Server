@@ -10,12 +10,12 @@ const __dirname = path.dirname(__filename)
 
 dotenv.config()
 
-// Import routes
 import bannerRoutes from "./routes/bannerRoutes.js"
 import productRoutes from "./routes/productRoutes.js"
 import userRoutes from "./routes/userRoutes.js"
 import cartRoutes from "./routes/cartRoutes.js"
 import offerBannerRoutes from "./routes/offerBannerRoutes.js"
+import adminRoutes from "./routes/adminRoutes.js";
 
 const app = express()
 
@@ -40,7 +40,6 @@ app.use(cors(corsOptions))
 app.use(express.json({ limit: "10mb" }))
 app.use(express.urlencoded({ extended: true, limit: "10mb" }))
 
-// Serve static files from the 'uploads' directory (for product images)
 app.use("/uploads", express.static(path.join(__dirname, "uploads")))
 
 app.use((req, res, next) => {
@@ -48,13 +47,12 @@ app.use((req, res, next) => {
   next()
 })
 
-// Use your routes
 app.use("/api/products", productRoutes)
-app.use("/api/banners", bannerRoutes) // This now handles homebanner, category, product-type
+app.use("/api/banners", bannerRoutes)
 app.use("/api", userRoutes)
 app.use("/api/cart", cartRoutes)
-// ✅ RE-ADDED: offerBannerRoutes
 app.use("/api/offer-banners", offerBannerRoutes)
+app.use("/api/admin", adminRoutes);
 
 app.get("/", (req, res) => {
   res.send("Mirakle Server is Running")
