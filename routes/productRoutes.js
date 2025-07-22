@@ -242,8 +242,6 @@ router.post("/:id/review", auth, uploadReview.array("images", 5), async (req, re
         rating: Number(rating),
         comment: comment.trim(),
         images: reviewImages,
-        likes: [],
-        dislikes: [],
         createdAt: new Date(),
       }
       product.reviews.push(newReview)
@@ -282,66 +280,6 @@ router.get("/", async (req, res) => {
     res.json(products)
   } catch (err) {
     res.status(500).json({ message: err.message })
-  }
-})
-
-router.post("/:id/review/:reviewId/like", auth, async (req, res) => {
-  try {
-    const { id: productId, reviewId } = req.params
-    const userId = req.user.id
-    const product = await Product.findById(productId)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-    const review = product.reviews.id(reviewId)
-    if (!review) return res.status(404).json({ message: "Review not found" })
-    const userLiked = review.likes.includes(userId)
-    const userDisliked = review.dislikes.includes(userId)
-    if (userLiked) {
-      review.likes = review.likes.filter((id) => id.toString() !== userId.toString())
-    } else {
-      review.likes.push(userId)
-      if (userDisliked) {
-        review.dislikes.pull(userId)
-      }
-    }
-    product.markModified("reviews")
-    await product.save()
-    const updatedReview = review.toObject()
-    updatedReview.userLiked = review.likes.some((id) => id.toString() === userId.toString())
-    updatedReview.userDisliked = review.dislikes.some((id) => id.toString() === userId.toString())
-    res.json({ message: "Review liked/unliked successfully", review: updatedReview })
-  } catch (err) {
-    console.error("Like review error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
-  }
-})
-
-router.post("/:id/review/:reviewId/dislike", auth, async (req, res) => {
-  try {
-    const { id: productId, reviewId } = req.params
-    const userId = req.user.id
-    const product = await Product.findById(productId)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-    const review = product.reviews.id(reviewId)
-    if (!review) return res.status(404).json({ message: "Review not found" })
-    const userLiked = review.likes.includes(userId)
-    const userDisliked = review.dislikes.includes(userId)
-    if (userDisliked) {
-      review.dislikes = review.dislikes.filter((id) => id.toString() !== userId.toString())
-    } else {
-      review.dislikes.push(userId)
-      if (userLiked) {
-        review.likes.pull(userId)
-      }
-    }
-    product.markModified("reviews")
-    await product.save()
-    const updatedReview = review.toObject()
-    updatedReview.userLiked = review.likes.some((id) => id.toString() === userId.toString())
-    updatedReview.userDisliked = review.dislikes.some((id) => id.toString() === userId.toString())
-    res.json({ message: "Review disliked/undisliked successfully", review: updatedReview })
-  } catch (err) {
-    console.error("Dislike review error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
   }
 })
 
