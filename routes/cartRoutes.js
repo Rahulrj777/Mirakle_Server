@@ -1,10 +1,10 @@
 import express from "express"
 import Cart from "../models/Cart.js"
-import auth from "../middleware/auth.js"
+import userAuth from "../middleware/userAuth.js"
 
 const router = express.Router()
 
-router.get("/", auth, async (req, res) => {
+router.get("/", userAuth, async (req, res) => {
   try {
     const userId = req.user.id
     console.log(`📦 Loading cart for user: ${userId}`)
@@ -20,7 +20,7 @@ router.get("/", auth, async (req, res) => {
   }
 })
 
-router.post("/add", auth, async (req, res) => {
+router.post("/add", userAuth, async (req, res) => {
   try {
     const userId = req.user.id
     const { item } = req.body
@@ -55,7 +55,7 @@ router.post("/add", auth, async (req, res) => {
   }
 })
 
-router.post("/", auth, async (req, res) => {
+router.post("/", userAuth, async (req, res) => {
   try {
     const userId = req.user.id
     const { items } = req.body
@@ -76,7 +76,7 @@ router.post("/", auth, async (req, res) => {
   }
 })
 
-router.delete("/", auth, async (req, res) => {
+router.delete("/", userAuth, async (req, res) => {
   try {
     const userId = req.user.id
     console.log(`🗑️ Clearing cart for user: ${userId}`)

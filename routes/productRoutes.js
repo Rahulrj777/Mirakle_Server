@@ -6,7 +6,7 @@ import { fileURLToPath } from "url"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 import Product from "../models/Product.js"
-import auth from "../middleware/auth.js"
+import adminAuth from "../middleware/adminAuth.js"
 import cloudinary from "../utils/cloudinary.js"
 import streamifier from "streamifier"
 
@@ -199,7 +199,7 @@ router.get("/search", async (req, res) => {
   }
 })
 
-router.post("/:id/review", auth, uploadReview.array("images", 5), async (req, res) => {
+router.post("/:id/review", adminAuth, uploadReview.array("images", 5), async (req, res) => {
   try {
     const { rating, comment } = req.body
     const reviewImages = req.files?.map((file) => `/uploads/reviews/${file.filename}`) || []
@@ -283,7 +283,7 @@ router.get("/", async (req, res) => {
   }
 })
 
-router.delete("/:id/review/:reviewId", auth, async (req, res) => {
+router.delete("/:id/review/:reviewId", adminAuth, async (req, res) => {
   try {
     const { id: productId, reviewId } = req.params
     const userId = req.user.id
@@ -311,7 +311,7 @@ router.delete("/:id/review/:reviewId", auth, async (req, res) => {
   }
 })
 
-router.put("/update/:id", auth, uploadProduct.array("images", 10), async (req, res) => {
+router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (req, res) => {
   try {
     const { name, variants, description, details, removedImages, keywords, productType } = req.body
     const product = await Product.findById(req.params.id)
