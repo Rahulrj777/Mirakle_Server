@@ -50,7 +50,7 @@ app.use((req, res, next) => {
 
 app.use("/api/products", productRoutes)
 app.use("/api/banners", bannerRoutes)
-app.use("/api/user", userRoutes)
+app.use("/api/users", userRoutes)
 app.use("/api/cart", cartRoutes)
 app.use("/api/offer-banners", offerBannerRoutes)
 app.use("/api/admin", adminRoutes);
