@@ -1,7 +1,9 @@
+// routes/userRoutes
 import express from "express"
 import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
 import User from "../models/User.js"
+import userAuth from "../middleware/userAuth.js"
 
 const router = express.Router()
 
@@ -73,5 +75,39 @@ router.post("/login", async (req, res) => {
     res.status(500).json({ message: "Server error" })
   }
 })
+
+// Get saved addresses
+router.get("/address", userAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    res.json({ addresses: user.addresses });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to get addresses" });
+  }
+});
+
+// Add new address
+router.post("/address", userAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    user.addresses.push(req.body);
+    await user.save();
+    res.status(201).json({ message: "Address added", addresses: user.addresses });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to add address" });
+  }
+});
+
+// Delete address
+router.delete("/address/:id", userAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    user.addresses = user.addresses.filter(a => a._id.toString() !== req.params.id);
+    await user.save();
+    res.json({ message: "Address deleted", addresses: user.addresses });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to delete address" });
+  }
+});
 
 export default router
