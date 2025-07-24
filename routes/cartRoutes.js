@@ -167,7 +167,7 @@ router.get("/", userAuth, async (req, res) => {
   }
 })
 
-// ✅ FIXED: Sync multiple cart items with proper validation
+// ✅ FIXED: Sync multiple cart items with proper validation and atomic upsert
 router.post("/", userAuth, async (req, res) => {
   try {
     const userId = req.user.id
@@ -179,22 +179,13 @@ router.post("/", userAuth, async (req, res) => {
       return res.status(400).json({ message: "Invalid items format" })
     }
 
-    // Find or create cart
-    let cart
-    try {
-      cart = await Cart.findOne({ userId })
-    } catch (findError) {
-      console.warn("⚠️ Cart find error during sync, recreating:", findError.message)
-      await Cart.findOneAndDelete({ userId })
-      cart = null
-    }
-
-    if (!cart) {
-      cart = new Cart({ userId, items: [] })
-    }
-
-    // Clear existing items and add new ones
-    cart.items = []
+    // Use findOneAndUpdate with upsert: true to atomically find or create the cart.
+    // This prevents the E11000 duplicate key error.
+    const cart = await Cart.findOneAndUpdate(
+      { userId },
+      { $set: { items: [] } }, // Clear existing items, we'll re-add them from the payload
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
+    )
 
     // Add items one by one with proper validation
     for (const item of items) {
@@ -204,7 +195,6 @@ router.post("/", userAuth, async (req, res) => {
       }
 
       try {
-        // ✅ FIXED: Ensure proper data structure
         const cartItem = {
           _id: new mongoose.Types.ObjectId(item._id),
           variantId: item.variantId,
@@ -230,21 +220,16 @@ router.post("/", userAuth, async (req, res) => {
       }
     }
 
-    // ✅ ENHANCED: Save with better error handling for sync
+    // Save the cart with the new items. This will now be an update operation
+    // on the document already found or created by findOneAndUpdate.
     try {
       await cart.save()
       console.log("✅ Cart synced successfully with", cart.items.length, "items")
     } catch (saveError) {
       console.error("❌ Cart sync save error:", saveError)
-      if (saveError.name === "ValidationError" || saveError.name === "VersionError") {
-        console.log("🧹 Attempting to clean and re-sync cart due to validation/version error")
-        await Cart.findOneAndDelete({ userId })
-        const cleanCart = new Cart({ userId, items: cart.items }) // Re-add the items that were just processed
-        await cleanCart.save()
-        console.log("✅ Cart re-synced successfully after cleanup")
-      } else {
-        throw saveError
-      }
+      // If a validation error occurs here, it's likely due to an invalid item structure
+      // that somehow bypassed the initial checks. The E11000 error should be gone.
+      throw saveError // Re-throw to be caught by the outer catch block
     }
 
     res.status(200).json({ message: "Cart synced successfully", items: cart.items })
