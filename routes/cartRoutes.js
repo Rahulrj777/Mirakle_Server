@@ -1,121 +1,76 @@
-import express from "express"
-import Cart from "../models/Cart.js"
-import userAuth from "../middleware/userAuth.js"
+import Admin from "../models/Admin.js";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import crypto from "crypto";
 
-const router = express.Router()
+const generateToken = (id) => {
+  return jwt.sign({ id, role: "admin" }, process.env.ADMIN_JWT_SECRET, { expiresIn: "2h" });
+};
 
-router.get("/", userAuth, async (req, res) => {
-  try {
-    const userId = req.user.id
-    console.log(`📦 Loading cart for user: ${userId}`)
+export const adminSignup = async (req, res) => {
+  const { name, email, password } = req.body;
 
-    const cart = await Cart.findOne({ userId })
-    const items = cart?.items || []
-
-    console.log(`📦 Found ${items.length} items in cart for user ${userId}`)
-    res.json({ items })
-  } catch (error) {
-    console.error("❌ Cart load error:", error)
-    res.status(500).json({ error: "Failed to load cart" })
+  const existingAdmin = await Admin.findOne();
+  if (existingAdmin) {
+    return res.status(403).json({ message: "Admin already exists. Signup disabled." });
   }
-})
 
-router.post("/add", userAuth, async (req, res) => {
-  try {
-    const userId = req.user.id
-    const { item } = req.body
+  const hashed = await bcrypt.hash(password, 10);
+  const admin = new Admin({ name, email, password: hashed });
 
-    console.log(`🛒 Adding item to cart for user: ${userId}`, item)
+  await admin.save();
 
-    if (!item || !item._id) {
-      return res.status(400).json({ message: "Invalid item data" })
-    }
+  const token = generateToken(admin._id);
 
-    let cart = await Cart.findOne({ userId })
+  res.status(201).json({
+    message: "Admin registered successfully",
+    token,
+    admin: { id: admin._id, name, email }
+  });
+};
 
-    if (!cart) {
-      cart = new Cart({ userId, items: [{ ...item, quantity: item.quantity || 1 }] })
-    } else {
-      const existingIndex = cart.items.findIndex((i) => i._id.toString() === item._id && i.variantId === item.variantId)
+export const adminLogin = async (req, res) => {
+  const { email, password } = req.body;
 
-      if (existingIndex > -1) {
-        cart.items[existingIndex].quantity += item.quantity || 1
-      } else {
-        cart.items.push({ ...item, quantity: item.quantity || 1 })
-      }
-    }
+  const admin = await Admin.findOne({ email });
+  if (!admin) return res.status(400).json({ message: "Invalid credentials" });
 
-    await cart.save()
-    console.log(`✅ Cart updated for user ${userId}, total items: ${cart.items.length}`)
+  const match = await bcrypt.compare(password, admin.password);
+  if (!match) return res.status(400).json({ message: "Invalid credentials" });
 
-    res.status(200).json({ message: "Item added to cart", items: cart.items })
-  } catch (err) {
-    console.error("❌ Cart add error:", err)
-    res.status(500).json({ message: "Failed to add to cart" })
-  }
-})
+  const token = generateToken(admin._id);
 
-router.post("/", userAuth, async (req, res) => {
-  try {
-    const userId = req.user.id
-    const { items } = req.body
+  res.json({ message: "Login successful", token, admin: { id: admin._id, name: admin.name, email } });
+};
 
-    console.log(`🔄 Syncing cart for user: ${userId}`, items)
+export const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+  const admin = await Admin.findOne({ email });
+  if (!admin) return res.status(404).json({ message: "Admin not found" });
 
-    if (!items || !Array.isArray(items)) {
-      return res.status(400).json({ message: "Invalid items format" })
-    }
+  const resetToken = crypto.randomBytes(32).toString("hex");
+  admin.resetToken = resetToken;
+  admin.resetTokenExpiry = Date.now() + 3600000; // 1 hour
+  await admin.save();
 
-    const cart = await Cart.findOneAndUpdate({ userId }, { $set: { items } }, { new: true, upsert: true })
+  res.json({ message: "Reset token generated", resetToken });
 
-    console.log(`✅ Cart synced for user ${userId}, total items: ${cart.items.length}`)
-    res.status(200).json({ message: "Cart synced successfully", items: cart.items })
-  } catch (error) {
-    console.error("❌ Cart sync error:", error)
-    res.status(500).json({ message: "Server error while syncing cart" })
-  }
-})
+};
 
-router.delete("/", userAuth, async (req, res) => {
-  try {
-    const userId = req.user.id
-    console.log(`🗑️ Clearing cart for user: ${userId}`)
+export const resetPassword = async (req, res) => {
+  const { token, newPassword } = req.body;
 
-    await Cart.findOneAndDelete({ userId })
-    res.json({ message: "Cart cleared" })
-  } catch (error) {
-    console.error("❌ Cart clear error:", error)
-    res.status(500).json({ error: "Failed to clear cart" })
-  }
-})
+  const admin = await Admin.findOne({
+    resetToken: token,
+    resetTokenExpiry: { $gt: Date.now() },
+  });
 
-router.patch("/update-quantity", userAuth, async (req, res) => {
-  const { _id, variantId, quantity } = req.body
-  const userId = req.user.id
+  if (!admin) return res.status(400).json({ message: "Invalid or expired token" });
 
-  const cart = await Cart.findOne({ userId })
-  if (!cart) return res.status(404).json({ message: "Cart not found" })
+  admin.password = await bcrypt.hash(newPassword, 10);
+  admin.resetToken = undefined;
+  admin.resetTokenExpiry = undefined;
 
-  const item = cart.items.find((i) => i._id.toString() === _id && i.variantId === variantId)
-  if (!item) return res.status(404).json({ message: "Item not found in cart" })
-
-  item.quantity = quantity
-  await cart.save()
-
-  res.json({ message: "Quantity updated", items: cart.items })
-})
-
-router.delete("/item", userAuth, async (req, res) => {
-  const { _id, variantId } = req.body
-  const userId = req.user.id
-
-  const cart = await Cart.findOne({ userId })
-  if (!cart) return res.status(404).json({ message: "Cart not found" })
-
-  cart.items = cart.items.filter((i) => !(i._id.toString() === _id && i.variantId === variantId))
-  await cart.save()
-
-  res.json({ message: "Item removed", items: cart.items })
-})
-
-export default router
+  await admin.save();
+  res.json({ message: "Password reset successful" });
+};
