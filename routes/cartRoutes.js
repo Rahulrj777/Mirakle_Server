@@ -5,18 +5,20 @@ import userAuth from "../middleware/userAuth.js"
 
 const router = express.Router()
 
-// ✅ FIXED: Separate /cart/add route for adding single items
+// ✅ FIXED: Handle variants without _id using index
 router.post("/add", userAuth, async (req, res) => {
   try {
-    const { productId, variantId, quantity = 1 } = req.body
+    const { productId, variantIndex, variantId, quantity = 1 } = req.body
     const userId = req.user.id
 
-    console.log("🛒 AddToCart Request:", { userId, productId, variantId, quantity })
+    console.log("🛒 AddToCart Request:", { userId, productId, variantIndex, variantId, quantity })
 
     // Validate required fields
-    if (!productId || !variantId || !userId) {
-      console.error("❌ Missing required fields:", { productId, variantId, userId })
-      return res.status(400).json({ message: "Invalid item data - missing productId, variantId, or userId" })
+    if (!productId || (variantIndex === undefined && !variantId) || !userId) {
+      console.error("❌ Missing required fields:", { productId, variantIndex, variantId, userId })
+      return res
+        .status(400)
+        .json({ message: "Invalid item data - missing productId, variantIndex/variantId, or userId" })
     }
 
     // Verify product exists
@@ -26,11 +28,20 @@ router.post("/add", userAuth, async (req, res) => {
       return res.status(404).json({ message: "Product not found" })
     }
 
-    // Verify variant exists
-    const variant = product.variants.id(variantId)
-    if (!variant) {
-      console.error("❌ Variant not found:", variantId)
-      return res.status(404).json({ message: "Variant not found" })
+    // Get variant by index if provided, otherwise try to find by _id
+    let variant
+    if (variantIndex !== undefined) {
+      variant = product.variants[variantIndex]
+      if (!variant) {
+        console.error("❌ Variant not found at index:", variantIndex)
+        return res.status(404).json({ message: "Variant not found at specified index" })
+      }
+    } else {
+      variant = product.variants.id(variantId)
+      if (!variant) {
+        console.error("❌ Variant not found with ID:", variantId)
+        return res.status(404).json({ message: "Variant not found" })
+      }
     }
 
     // Find or create user cart
@@ -39,9 +50,12 @@ router.post("/add", userAuth, async (req, res) => {
       userCart = new Cart({ userId, items: [] })
     }
 
+    // Use the provided variantId or generate one from index
+    const finalVariantId = variantId || `${productId}_variant_${variantIndex}_${variant.size}`
+
     // Check if item already exists in cart
     const existingItem = userCart.items.find(
-      (item) => item._id.toString() === productId && item.variantId?.toString() === variantId,
+      (item) => item._id.toString() === productId && item.variantId === finalVariantId,
     )
 
     if (existingItem) {
@@ -52,7 +66,7 @@ router.post("/add", userAuth, async (req, res) => {
       // Add new item to cart
       const newItem = {
         _id: productId,
-        variantId: variantId,
+        variantId: finalVariantId,
         title: product.title,
         images: product.images,
         size: variant.size || `${variant.weight?.value} ${variant.weight?.unit}`,
@@ -120,7 +134,7 @@ router.post("/", userAuth, async (req, res) => {
       if (!item._id || !item.variantId) continue
 
       const existingItem = cart.items.find(
-        (i) => i._id.toString() === item._id.toString() && i.variantId?.toString() === item.variantId?.toString(),
+        (i) => i._id.toString() === item._id.toString() && i.variantId === item.variantId,
       )
 
       if (existingItem) {
@@ -162,9 +176,7 @@ router.patch("/update-quantity", userAuth, async (req, res) => {
     const cart = await Cart.findOne({ userId })
     if (!cart) return res.status(404).json({ message: "Cart not found" })
 
-    const item = cart.items.find(
-      (i) => i._id.toString() === _id.toString() && i.variantId?.toString() === variantId?.toString(),
-    )
+    const item = cart.items.find((i) => i._id.toString() === _id.toString() && i.variantId === variantId)
 
     if (!item) return res.status(404).json({ message: "Item not found in cart" })
 
@@ -187,9 +199,7 @@ router.delete("/item", userAuth, async (req, res) => {
     const cart = await Cart.findOne({ userId })
     if (!cart) return res.status(404).json({ message: "Cart not found" })
 
-    cart.items = cart.items.filter(
-      (i) => !(i._id.toString() === _id.toString() && i.variantId?.toString() === variantId?.toString()),
-    )
+    cart.items = cart.items.filter((i) => !(i._id.toString() === _id.toString() && i.variantId === variantId))
 
     await cart.save()
     res.json({ message: "Item removed", items: cart.items })
