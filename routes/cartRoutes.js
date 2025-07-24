@@ -25,7 +25,7 @@ router.post("/add", userAuth, async (req, res) => {
     const userId = req.user.id
     const { item } = req.body;
 
-    if (!item || !item._id || !item.variantId) {
+    if (!item || !item._id) {
       return res.status(400).json({ message: "Invalid item data" });
     }
 
