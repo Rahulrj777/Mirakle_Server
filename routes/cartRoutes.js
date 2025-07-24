@@ -89,4 +89,33 @@ router.delete("/", userAuth, async (req, res) => {
   }
 })
 
+router.patch("/update-quantity", userAuth, async (req, res) => {
+  const { _id, variantId, quantity } = req.body
+  const userId = req.user.id
+
+  const cart = await Cart.findOne({ userId })
+  if (!cart) return res.status(404).json({ message: "Cart not found" })
+
+  const item = cart.items.find((i) => i._id.toString() === _id && i.variantId === variantId)
+  if (!item) return res.status(404).json({ message: "Item not found in cart" })
+
+  item.quantity = quantity
+  await cart.save()
+
+  res.json({ message: "Quantity updated", items: cart.items })
+})
+
+router.delete("/item", userAuth, async (req, res) => {
+  const { _id, variantId } = req.body
+  const userId = req.user.id
+
+  const cart = await Cart.findOne({ userId })
+  if (!cart) return res.status(404).json({ message: "Cart not found" })
+
+  cart.items = cart.items.filter((i) => !(i._id.toString() === _id && i.variantId === variantId))
+  await cart.save()
+
+  res.json({ message: "Item removed", items: cart.items })
+})
+
 export default router
