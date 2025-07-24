@@ -173,7 +173,7 @@ router.post("/", userAuth, async (req, res) => {
     const userId = req.user.id
     const { items } = req.body
 
-    console.log("🔄 Syncing cart items:", items?.length || 0)
+    console.log(`🔄 Syncing cart items for user ${userId}. Items count: ${items?.length || 0}`)
 
     if (!items || !Array.isArray(items)) {
       return res.status(400).json({ message: "Invalid items format" })
@@ -186,6 +186,7 @@ router.post("/", userAuth, async (req, res) => {
       { $set: { items: [] } }, // Clear existing items, we'll re-add them from the payload
       { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
     )
+    console.log(`findOneAndUpdate result for userId ${userId}:`, cart ? "Found/Created" : "Failed to find/create")
 
     // Add items one by one with proper validation
     for (const item of items) {
@@ -227,9 +228,15 @@ router.post("/", userAuth, async (req, res) => {
       console.log("✅ Cart synced successfully with", cart.items.length, "items")
     } catch (saveError) {
       console.error("❌ Cart sync save error:", saveError)
-      // If a validation error occurs here, it's likely due to an invalid item structure
-      // that somehow bypassed the initial checks. The E11000 error should be gone.
-      throw saveError // Re-throw to be caught by the outer catch block
+      if (saveError.name === "ValidationError" || saveError.name === "VersionError") {
+        console.log("🧹 Attempting to clean and re-sync cart due to validation/version error")
+        await Cart.findOneAndDelete({ userId })
+        const cleanCart = new Cart({ userId, items: cart.items }) // Re-add the items that were just processed
+        await cleanCart.save()
+        console.log("✅ Cart re-synced successfully after cleanup")
+      } else {
+        throw saveError
+      }
     }
 
     res.status(200).json({ message: "Cart synced successfully", items: cart.items })
