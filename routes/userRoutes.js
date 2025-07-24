@@ -102,18 +102,10 @@ router.post("/address", userAuth, async (req, res) => {
 router.delete("/address/:id", userAuth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    
-    // Correct filtering
-    const updatedAddresses = user.addresses.filter(
-      a => a._id.toString() !== req.params.id.toString()
-    );
-
-    user.addresses = updatedAddresses;
+    user.addresses = user.addresses.filter(a => a._id.toString() !== req.params.id);
     await user.save();
-
     res.json({ message: "Address deleted", addresses: user.addresses });
   } catch (err) {
-    console.error("Delete error:", err);
     res.status(500).json({ message: "Failed to delete address" });
   }
 });
