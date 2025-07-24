@@ -23,12 +23,10 @@ router.get("/", userAuth, async (req, res) => {
 router.post("/add", userAuth, async (req, res) => {
   try {
     const userId = req.user.id
-    const { item } = req.body
+    const { item } = req.body;
 
-    console.log(`🛒 Adding item to cart for user: ${userId}`, item)
-
-    if (!item || !item._id) {
-      return res.status(400).json({ message: "Invalid item data" })
+    if (!item || !item._id || !item.variantId) {
+      return res.status(400).json({ message: "Invalid item data" });
     }
 
     let cart = await Cart.findOne({ userId })
@@ -36,13 +34,20 @@ router.post("/add", userAuth, async (req, res) => {
     if (!cart) {
       cart = new Cart({ userId, items: [{ ...item, quantity: item.quantity || 1 }] })
     } else {
-      const existingIndex = cart.items.findIndex((i) => i._id.toString() === item._id && i.variantId === item.variantId)
+      const existingIndex = cart.items.findIndex(
+        (i) =>
+          i._id.toString() === item._id.toString() &&
+          i.variantId?.toString() === item.variantId?.toString()
+      );
 
       if (existingIndex > -1) {
         cart.items[existingIndex].quantity += item.quantity || 1
-      } else {
-        cart.items.push({ ...item, quantity: item.quantity || 1 })
-      }
+      } else cart.items.push({
+        ...item,
+        _id: item._id.toString(),
+        variantId: item.variantId?.toString(),
+        quantity: item.quantity || 1
+      });
     }
 
     await cart.save()
@@ -96,7 +101,9 @@ router.patch("/update-quantity", userAuth, async (req, res) => {
   const cart = await Cart.findOne({ userId })
   if (!cart) return res.status(404).json({ message: "Cart not found" })
 
-  const item = cart.items.find((i) => i._id.toString() === _id && i.variantId === variantId)
+  const item = cart.items.find(
+    (i) => i._id.toString() === _id.toString() && i.variantId?.toString() === variantId?.toString()
+  )
   if (!item) return res.status(404).json({ message: "Item not found in cart" })
 
   item.quantity = quantity
@@ -112,7 +119,9 @@ router.delete("/item", userAuth, async (req, res) => {
   const cart = await Cart.findOne({ userId })
   if (!cart) return res.status(404).json({ message: "Cart not found" })
 
-  cart.items = cart.items.filter((i) => !(i._id.toString() === _id && i.variantId === variantId))
+  cart.items = cart.items.filter(
+    (i) => !(i._id.toString() === _id.toString() && i.variantId?.toString() === variantId?.toString())
+  )
   await cart.save()
 
   res.json({ message: "Item removed", items: cart.items })
