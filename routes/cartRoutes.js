@@ -2,6 +2,7 @@ import express from "express"
 import Cart from "../models/Cart.js"
 import Product from "../models/Product.js"
 import userAuth from "../middleware/userAuth.js"
+import mongoose from "mongoose"
 
 const router = express.Router()
 
@@ -63,17 +64,24 @@ router.post("/add", userAuth, async (req, res) => {
       existingItem.quantity += quantity
       console.log("✅ Updated existing item quantity:", existingItem.quantity)
     } else {
-      // Add new item to cart
+      // ✅ FIXED: Create new item with proper structure matching schema
       const newItem = {
-        _id: productId,
+        _id: new mongoose.Types.ObjectId(productId),
         variantId: finalVariantId,
         title: product.title,
-        images: product.images,
+        images: {
+          others:
+            product.images?.others?.map((img) => ({
+              url: img.url || img, // Handle both object and string formats
+            })) || [],
+        },
         size: variant.size || `${variant.weight?.value} ${variant.weight?.unit}`,
         weight: {
           value: variant.weight?.value || variant.size,
           unit: variant.weight?.unit || "unit",
         },
+        originalPrice: variant.price,
+        discountPercent: variant.discountPercent || 0,
         currentPrice: variant.price - (variant.price * (variant.discountPercent || 0)) / 100,
         quantity: quantity,
       }
@@ -113,43 +121,68 @@ router.get("/", userAuth, async (req, res) => {
   }
 })
 
-// Sync multiple cart items (for bulk operations)
+// ✅ FIXED: Sync multiple cart items with proper validation
 router.post("/", userAuth, async (req, res) => {
   try {
     const userId = req.user.id
     const { items } = req.body
 
+    console.log("🔄 Syncing cart items:", items?.length || 0)
+
     if (!items || !Array.isArray(items)) {
       return res.status(400).json({ message: "Invalid items format" })
     }
 
-    // Load or create cart
+    // Find or create cart
     let cart = await Cart.findOne({ userId })
     if (!cart) {
       cart = new Cart({ userId, items: [] })
     }
 
-    // Add items one by one with variant-based uniqueness
+    // Clear existing items and add new ones
+    cart.items = []
+
+    // Add items one by one with proper validation
     for (const item of items) {
-      if (!item._id || !item.variantId) continue
+      if (!item._id || !item.variantId) {
+        console.warn("⚠️ Skipping invalid item:", item)
+        continue
+      }
 
-      const existingItem = cart.items.find(
-        (i) => i._id.toString() === item._id.toString() && i.variantId === item.variantId,
-      )
+      try {
+        // ✅ FIXED: Ensure proper data structure
+        const cartItem = {
+          _id: new mongoose.Types.ObjectId(item._id),
+          variantId: item.variantId,
+          title: item.title,
+          images: {
+            others:
+              item.images?.others?.map((img) => ({
+                url: typeof img === "string" ? img : img.url,
+              })) || [],
+          },
+          size: item.size,
+          weight: item.weight || { value: item.size, unit: "unit" },
+          originalPrice: item.originalPrice || item.currentPrice,
+          discountPercent: item.discountPercent || 0,
+          currentPrice: item.currentPrice,
+          quantity: item.quantity || 1,
+        }
 
-      if (existingItem) {
-        // Update quantity (optional logic, or skip)
-        existingItem.quantity += item.quantity || 1
-      } else {
-        cart.items.push({ ...item, quantity: item.quantity || 1 })
+        cart.items.push(cartItem)
+      } catch (itemError) {
+        console.error("❌ Error processing item:", item, itemError)
+        continue
       }
     }
 
     await cart.save()
+    console.log("✅ Cart synced successfully with", cart.items.length, "items")
+
     res.status(200).json({ message: "Cart synced successfully", items: cart.items })
   } catch (error) {
     console.error("❌ Cart sync error:", error)
-    res.status(500).json({ message: "Server error while syncing cart" })
+    res.status(500).json({ message: "Server error while syncing cart", error: error.message })
   }
 })
 
