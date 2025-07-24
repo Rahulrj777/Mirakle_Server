@@ -1,11 +1,89 @@
 import express from "express"
 import Cart from "../models/Cart.js"
+import Product from "../models/Product.js"
 import userAuth from "../middleware/userAuth.js"
-import addToCart from "../controllers/cartController.js";
 
 const router = express.Router()
 
-router.get("/", userAuth,addToCart, async (req, res) => {
+// ✅ FIXED: Separate /cart/add route for adding single items
+router.post("/add", userAuth, async (req, res) => {
+  try {
+    const { productId, variantId, quantity = 1 } = req.body
+    const userId = req.user.id
+
+    console.log("🛒 AddToCart Request:", { userId, productId, variantId, quantity })
+
+    // Validate required fields
+    if (!productId || !variantId || !userId) {
+      console.error("❌ Missing required fields:", { productId, variantId, userId })
+      return res.status(400).json({ message: "Invalid item data - missing productId, variantId, or userId" })
+    }
+
+    // Verify product exists
+    const product = await Product.findById(productId)
+    if (!product) {
+      console.error("❌ Product not found:", productId)
+      return res.status(404).json({ message: "Product not found" })
+    }
+
+    // Verify variant exists
+    const variant = product.variants.id(variantId)
+    if (!variant) {
+      console.error("❌ Variant not found:", variantId)
+      return res.status(404).json({ message: "Variant not found" })
+    }
+
+    // Find or create user cart
+    let userCart = await Cart.findOne({ userId })
+    if (!userCart) {
+      userCart = new Cart({ userId, items: [] })
+    }
+
+    // Check if item already exists in cart
+    const existingItem = userCart.items.find(
+      (item) => item._id.toString() === productId && item.variantId?.toString() === variantId,
+    )
+
+    if (existingItem) {
+      // Update quantity of existing item
+      existingItem.quantity += quantity
+      console.log("✅ Updated existing item quantity:", existingItem.quantity)
+    } else {
+      // Add new item to cart
+      const newItem = {
+        _id: productId,
+        variantId: variantId,
+        title: product.title,
+        images: product.images,
+        size: variant.size || `${variant.weight?.value} ${variant.weight?.unit}`,
+        weight: {
+          value: variant.weight?.value || variant.size,
+          unit: variant.weight?.unit || "unit",
+        },
+        currentPrice: variant.price - (variant.price * (variant.discountPercent || 0)) / 100,
+        quantity: quantity,
+      }
+
+      userCart.items.push(newItem)
+      console.log("✅ Added new item to cart:", newItem)
+    }
+
+    await userCart.save()
+    console.log("✅ Cart saved successfully")
+
+    res.status(200).json({
+      message: "Added to cart successfully",
+      cart: userCart,
+      itemsCount: userCart.items.length,
+    })
+  } catch (error) {
+    console.error("❌ AddToCart Error:", error)
+    res.status(500).json({ message: "Server error", error: error.message })
+  }
+})
+
+// Get cart items
+router.get("/", userAuth, async (req, res) => {
   try {
     const userId = req.user.id
     console.log(`📦 Loading cart for user: ${userId}`)
@@ -21,47 +99,48 @@ router.get("/", userAuth,addToCart, async (req, res) => {
   }
 })
 
-router.post("/", userAuth, addToCart, async (req, res) => {
+// Sync multiple cart items (for bulk operations)
+router.post("/", userAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
-    const { items } = req.body;
+    const userId = req.user.id
+    const { items } = req.body
 
     if (!items || !Array.isArray(items)) {
-      return res.status(400).json({ message: "Invalid items format" });
+      return res.status(400).json({ message: "Invalid items format" })
     }
 
     // Load or create cart
-    let cart = await Cart.findOne({ userId });
+    let cart = await Cart.findOne({ userId })
     if (!cart) {
-      cart = new Cart({ userId, items: [] });
+      cart = new Cart({ userId, items: [] })
     }
 
     // Add items one by one with variant-based uniqueness
     for (const item of items) {
-      if (!item._id || !item.variantId) continue;
+      if (!item._id || !item.variantId) continue
 
       const existingItem = cart.items.find(
-        (i) => i._id.toString() === item._id.toString() && i.variantId.toString() === item.variantId.toString()
-      );
+        (i) => i._id.toString() === item._id.toString() && i.variantId?.toString() === item.variantId?.toString(),
+      )
 
       if (existingItem) {
         // Update quantity (optional logic, or skip)
-        existingItem.quantity += item.quantity || 1;
+        existingItem.quantity += item.quantity || 1
       } else {
-        cart.items.push({ ...item, quantity: item.quantity || 1 });
+        cart.items.push({ ...item, quantity: item.quantity || 1 })
       }
     }
 
-    await cart.save();
-
-    res.status(200).json({ message: "Cart synced successfully", items: cart.items });
+    await cart.save()
+    res.status(200).json({ message: "Cart synced successfully", items: cart.items })
   } catch (error) {
-    console.error("❌ Cart sync error:", error);
-    res.status(500).json({ message: "Server error while syncing cart" });
+    console.error("❌ Cart sync error:", error)
+    res.status(500).json({ message: "Server error while syncing cart" })
   }
-});
+})
 
-router.delete("/", userAuth,addToCart, async (req, res) => {
+// Clear cart
+router.delete("/", userAuth, async (req, res) => {
   try {
     const userId = req.user.id
     console.log(`🗑️ Clearing cart for user: ${userId}`)
@@ -74,37 +153,50 @@ router.delete("/", userAuth,addToCart, async (req, res) => {
   }
 })
 
-router.patch("/update-quantity", userAuth,addToCart, async (req, res) => {
-  const { _id, variantId, quantity } = req.body
-  const userId = req.user.id
+// Update item quantity
+router.patch("/update-quantity", userAuth, async (req, res) => {
+  try {
+    const { _id, variantId, quantity } = req.body
+    const userId = req.user.id
 
-  const cart = await Cart.findOne({ userId })
-  if (!cart) return res.status(404).json({ message: "Cart not found" })
+    const cart = await Cart.findOne({ userId })
+    if (!cart) return res.status(404).json({ message: "Cart not found" })
 
-  const item = cart.items.find(
-    (i) => i._id.toString() === _id.toString() && i.variantId?.toString() === variantId?.toString()
-  )
-  if (!item) return res.status(404).json({ message: "Item not found in cart" })
+    const item = cart.items.find(
+      (i) => i._id.toString() === _id.toString() && i.variantId?.toString() === variantId?.toString(),
+    )
 
-  item.quantity = quantity
-  await cart.save()
+    if (!item) return res.status(404).json({ message: "Item not found in cart" })
 
-  res.json({ message: "Quantity updated", items: cart.items })
+    item.quantity = quantity
+    await cart.save()
+
+    res.json({ message: "Quantity updated", items: cart.items })
+  } catch (error) {
+    console.error("❌ Update quantity error:", error)
+    res.status(500).json({ error: "Failed to update quantity" })
+  }
 })
 
-router.delete("/item", userAuth,addToCart, async (req, res) => {
-  const { _id, variantId } = req.body
-  const userId = req.user.id
+// Remove item from cart
+router.delete("/item", userAuth, async (req, res) => {
+  try {
+    const { _id, variantId } = req.body
+    const userId = req.user.id
 
-  const cart = await Cart.findOne({ userId })
-  if (!cart) return res.status(404).json({ message: "Cart not found" })
+    const cart = await Cart.findOne({ userId })
+    if (!cart) return res.status(404).json({ message: "Cart not found" })
 
-  cart.items = cart.items.filter(
-    (i) => !(i._id.toString() === _id.toString() && i.variantId?.toString() === variantId?.toString())
-  )
-  await cart.save()
+    cart.items = cart.items.filter(
+      (i) => !(i._id.toString() === _id.toString() && i.variantId?.toString() === variantId?.toString()),
+    )
 
-  res.json({ message: "Item removed", items: cart.items })
+    await cart.save()
+    res.json({ message: "Item removed", items: cart.items })
+  } catch (error) {
+    console.error("❌ Remove item error:", error)
+    res.status(500).json({ error: "Failed to remove item" })
+  }
 })
 
 export default router
