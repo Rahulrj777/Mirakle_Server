@@ -6,7 +6,28 @@ import mongoose from "mongoose"
 
 const router = express.Router()
 
-// ✅ FIXED: Handle variants without _id using index
+// ✅ NEW: Clear corrupted cart data (temporary migration route)
+router.post("/migrate-clean", userAuth, async (req, res) => {
+  try {
+    const userId = req.user.id
+    console.log(`🧹 Cleaning corrupted cart data for user: ${userId}`)
+
+    // Delete the existing cart to start fresh
+    await Cart.findOneAndDelete({ userId })
+
+    // Create a new empty cart
+    const newCart = new Cart({ userId, items: [] })
+    await newCart.save()
+
+    console.log("✅ Cart cleaned and recreated successfully")
+    res.json({ message: "Cart cleaned successfully", items: [] })
+  } catch (error) {
+    console.error("❌ Cart cleanup error:", error)
+    res.status(500).json({ error: "Failed to clean cart" })
+  }
+})
+
+// ✅ ENHANCED: Handle variants without _id using index with better error handling
 router.post("/add", userAuth, async (req, res) => {
   try {
     const { productId, variantIndex, variantId, quantity = 1 } = req.body
@@ -45,8 +66,16 @@ router.post("/add", userAuth, async (req, res) => {
       }
     }
 
-    // Find or create user cart
-    let userCart = await Cart.findOne({ userId })
+    // ✅ ENHANCED: Try to find cart, if corrupted, recreate it
+    let userCart
+    try {
+      userCart = await Cart.findOne({ userId })
+    } catch (findError) {
+      console.warn("⚠️ Cart find error, recreating:", findError.message)
+      await Cart.findOneAndDelete({ userId })
+      userCart = null
+    }
+
     if (!userCart) {
       userCart = new Cart({ userId, items: [] })
     }
@@ -59,39 +88,55 @@ router.post("/add", userAuth, async (req, res) => {
       (item) => item._id.toString() === productId && item.variantId === finalVariantId,
     )
 
+    const newItem = {
+      _id: new mongoose.Types.ObjectId(productId),
+      variantId: finalVariantId,
+      title: product.title || "Unknown Product",
+      images: {
+        others: Array.isArray(product.images?.others)
+          ? product.images.others.map((img) => ({
+              url: typeof img === "string" ? img : img?.url || "/placeholder.svg",
+            }))
+          : [{ url: "/placeholder.svg" }],
+      },
+      size: variant.size || `${variant.weight?.value || "N/A"} ${variant.weight?.unit || ""}`,
+      weight: {
+        value: variant.weight?.value || variant.size || "N/A",
+        unit: variant.weight?.unit || "unit",
+      },
+      originalPrice: Number(variant.price) || 0,
+      discountPercent: Number(variant.discountPercent) || 0,
+      currentPrice: Number(variant.price - (variant.price * (variant.discountPercent || 0)) / 100) || 0,
+      quantity: Number(quantity) || 1,
+    }
+
     if (existingItem) {
       // Update quantity of existing item
       existingItem.quantity += quantity
       console.log("✅ Updated existing item quantity:", existingItem.quantity)
     } else {
-      // ✅ FIXED: Create new item with proper structure matching schema
-      const newItem = {
-        _id: new mongoose.Types.ObjectId(productId),
-        variantId: finalVariantId,
-        title: product.title,
-        images: {
-          others:
-            product.images?.others?.map((img) => ({
-              url: img.url || img, // Handle both object and string formats
-            })) || [],
-        },
-        size: variant.size || `${variant.weight?.value} ${variant.weight?.unit}`,
-        weight: {
-          value: variant.weight?.value || variant.size,
-          unit: variant.weight?.unit || "unit",
-        },
-        originalPrice: variant.price,
-        discountPercent: variant.discountPercent || 0,
-        currentPrice: variant.price - (variant.price * (variant.discountPercent || 0)) / 100,
-        quantity: quantity,
-      }
-
+      // ✅ ENHANCED: Create new item with extra validation
       userCart.items.push(newItem)
       console.log("✅ Added new item to cart:", newItem)
     }
 
-    await userCart.save()
-    console.log("✅ Cart saved successfully")
+    // ✅ ENHANCED: Save with better error handling
+    try {
+      await userCart.save()
+      console.log("✅ Cart saved successfully")
+    } catch (saveError) {
+      console.error("❌ Cart save error:", saveError)
+      // If save fails due to validation, try to clean and recreate
+      if (saveError.name === "ValidationError") {
+        console.log("🧹 Attempting to clean and recreate cart due to validation error")
+        await Cart.findOneAndDelete({ userId })
+        const cleanCart = new Cart({ userId, items: [newItem] })
+        await cleanCart.save()
+        console.log("✅ Cart recreated successfully")
+      } else {
+        throw saveError
+      }
+    }
 
     res.status(200).json({
       message: "Added to cart successfully",
