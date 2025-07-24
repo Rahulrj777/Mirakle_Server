@@ -59,7 +59,8 @@ router.post("/add", userAuth, async (req, res) => {
         return res.status(404).json({ message: "Variant not found at specified index" })
       }
     } else {
-      variant = product.variants.id(variantId)
+      // Fallback to finding by variantId if index is not provided
+      variant = product.variants.find((v) => v._id?.toString() === variantId)
       if (!variant) {
         console.error("❌ Variant not found with ID:", variantId)
         return res.status(404).json({ message: "Variant not found" })
@@ -81,7 +82,7 @@ router.post("/add", userAuth, async (req, res) => {
     }
 
     // Use the provided variantId or generate one from index
-    const finalVariantId = variantId || `${productId}_variant_${variantIndex}_${variant.size}`
+    const finalVariantId = variantId || `${productId}_variant_${variantIndex}_${variant.size || "unknown"}`
 
     // Check if item already exists in cart
     const existingItem = userCart.items.find(
@@ -127,8 +128,8 @@ router.post("/add", userAuth, async (req, res) => {
     } catch (saveError) {
       console.error("❌ Cart save error:", saveError)
       // If save fails due to validation, try to clean and recreate
-      if (saveError.name === "ValidationError") {
-        console.log("🧹 Attempting to clean and recreate cart due to validation error")
+      if (saveError.name === "ValidationError" || saveError.name === "VersionError") {
+        console.log("🧹 Attempting to clean and recreate cart due to validation/version error")
         await Cart.findOneAndDelete({ userId })
         const cleanCart = new Cart({ userId, items: [newItem] })
         await cleanCart.save()
@@ -179,7 +180,15 @@ router.post("/", userAuth, async (req, res) => {
     }
 
     // Find or create cart
-    let cart = await Cart.findOne({ userId })
+    let cart
+    try {
+      cart = await Cart.findOne({ userId })
+    } catch (findError) {
+      console.warn("⚠️ Cart find error during sync, recreating:", findError.message)
+      await Cart.findOneAndDelete({ userId })
+      cart = null
+    }
+
     if (!cart) {
       cart = new Cart({ userId, items: [] })
     }
@@ -190,7 +199,7 @@ router.post("/", userAuth, async (req, res) => {
     // Add items one by one with proper validation
     for (const item of items) {
       if (!item._id || !item.variantId) {
-        console.warn("⚠️ Skipping invalid item:", item)
+        console.warn("⚠️ Skipping invalid item during sync:", item)
         continue
       }
 
@@ -199,30 +208,44 @@ router.post("/", userAuth, async (req, res) => {
         const cartItem = {
           _id: new mongoose.Types.ObjectId(item._id),
           variantId: item.variantId,
-          title: item.title,
+          title: item.title || "Unknown Product",
           images: {
             others:
               item.images?.others?.map((img) => ({
-                url: typeof img === "string" ? img : img.url,
+                url: typeof img === "string" ? img : img?.url || "/placeholder.svg",
               })) || [],
           },
           size: item.size,
           weight: item.weight || { value: item.size, unit: "unit" },
-          originalPrice: item.originalPrice || item.currentPrice,
+          originalPrice: item.originalPrice || item.currentPrice || 0,
           discountPercent: item.discountPercent || 0,
-          currentPrice: item.currentPrice,
+          currentPrice: item.currentPrice || 0,
           quantity: item.quantity || 1,
         }
 
         cart.items.push(cartItem)
       } catch (itemError) {
-        console.error("❌ Error processing item:", item, itemError)
+        console.error("❌ Error processing item during sync:", item, itemError)
         continue
       }
     }
 
-    await cart.save()
-    console.log("✅ Cart synced successfully with", cart.items.length, "items")
+    // ✅ ENHANCED: Save with better error handling for sync
+    try {
+      await cart.save()
+      console.log("✅ Cart synced successfully with", cart.items.length, "items")
+    } catch (saveError) {
+      console.error("❌ Cart sync save error:", saveError)
+      if (saveError.name === "ValidationError" || saveError.name === "VersionError") {
+        console.log("🧹 Attempting to clean and re-sync cart due to validation/version error")
+        await Cart.findOneAndDelete({ userId })
+        const cleanCart = new Cart({ userId, items: cart.items }) // Re-add the items that were just processed
+        await cleanCart.save()
+        console.log("✅ Cart re-synced successfully after cleanup")
+      } else {
+        throw saveError
+      }
+    }
 
     res.status(200).json({ message: "Cart synced successfully", items: cart.items })
   } catch (error) {
