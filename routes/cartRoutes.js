@@ -1,10 +1,11 @@
 import express from "express"
 import Cart from "../models/Cart.js"
 import userAuth from "../middleware/userAuth.js"
+import addToCart from "../controllers/cartController.js";
 
 const router = express.Router()
 
-router.get("/", userAuth, async (req, res) => {
+router.get("/", userAuth,addToCart, async (req, res) => {
   try {
     const userId = req.user.id
     console.log(`📦 Loading cart for user: ${userId}`)
@@ -20,70 +21,47 @@ router.get("/", userAuth, async (req, res) => {
   }
 })
 
-router.post("/add", userAuth, async (req, res) => {
+router.post("/", userAuth, addToCart, async (req, res) => {
   try {
-    const userId = req.user.id
-    const { item } = req.body;
-
-    if (!item || !item._id) {
-      return res.status(400).json({ message: "Invalid item data" });
-    }
-
-    let cart = await Cart.findOne({ userId })
-
-    if (!cart) {
-      cart = new Cart({ userId, items: [{ ...item, quantity: item.quantity || 1 }] })
-    } else {
-      const existingIndex = cart.items.findIndex(
-        (i) =>
-          i._id.toString() === item._id.toString() &&
-          i.variantId?.toString() === item.variantId?.toString()
-      );
-      console.log("🛒 Incoming item:", item);
-      console.log("📦 Existing items:", cart.items);
-
-      if (existingIndex > -1) {
-        cart.items[existingIndex].quantity += item.quantity || 1
-      } else cart.items.push({
-        ...item,
-        _id: item._id.toString(),
-        variantId: item.variantId?.toString(),
-        quantity: item.quantity || 1
-      });
-    }
-
-    await cart.save()
-    console.log(`✅ Cart updated for user ${userId}, total items: ${cart.items.length}`)
-
-    res.status(200).json({ message: "Item added to cart", items: cart.items })
-  } catch (err) {
-    console.error("❌ Cart add error:", err)
-    res.status(500).json({ message: "Failed to add to cart" })
-  }
-})
-
-router.post("/", userAuth, async (req, res) => {
-  try {
-    const userId = req.user.id
-    const { items } = req.body
-
-    console.log(`🔄 Syncing cart for user: ${userId}`, items)
+    const userId = req.user.id;
+    const { items } = req.body;
 
     if (!items || !Array.isArray(items)) {
-      return res.status(400).json({ message: "Invalid items format" })
+      return res.status(400).json({ message: "Invalid items format" });
     }
 
-    const cart = await Cart.findOneAndUpdate({ userId }, { $set: { items } }, { new: true, upsert: true })
+    // Load or create cart
+    let cart = await Cart.findOne({ userId });
+    if (!cart) {
+      cart = new Cart({ userId, items: [] });
+    }
 
-    console.log(`✅ Cart synced for user ${userId}, total items: ${cart.items.length}`)
-    res.status(200).json({ message: "Cart synced successfully", items: cart.items })
+    // Add items one by one with variant-based uniqueness
+    for (const item of items) {
+      if (!item._id || !item.variantId) continue;
+
+      const existingItem = cart.items.find(
+        (i) => i._id.toString() === item._id.toString() && i.variantId.toString() === item.variantId.toString()
+      );
+
+      if (existingItem) {
+        // Update quantity (optional logic, or skip)
+        existingItem.quantity += item.quantity || 1;
+      } else {
+        cart.items.push({ ...item, quantity: item.quantity || 1 });
+      }
+    }
+
+    await cart.save();
+
+    res.status(200).json({ message: "Cart synced successfully", items: cart.items });
   } catch (error) {
-    console.error("❌ Cart sync error:", error)
-    res.status(500).json({ message: "Server error while syncing cart" })
+    console.error("❌ Cart sync error:", error);
+    res.status(500).json({ message: "Server error while syncing cart" });
   }
-})
+});
 
-router.delete("/", userAuth, async (req, res) => {
+router.delete("/", userAuth,addToCart, async (req, res) => {
   try {
     const userId = req.user.id
     console.log(`🗑️ Clearing cart for user: ${userId}`)
@@ -96,7 +74,7 @@ router.delete("/", userAuth, async (req, res) => {
   }
 })
 
-router.patch("/update-quantity", userAuth, async (req, res) => {
+router.patch("/update-quantity", userAuth,addToCart, async (req, res) => {
   const { _id, variantId, quantity } = req.body
   const userId = req.user.id
 
@@ -114,7 +92,7 @@ router.patch("/update-quantity", userAuth, async (req, res) => {
   res.json({ message: "Quantity updated", items: cart.items })
 })
 
-router.delete("/item", userAuth, async (req, res) => {
+router.delete("/item", userAuth,addToCart, async (req, res) => {
   const { _id, variantId } = req.body
   const userId = req.user.id
 
