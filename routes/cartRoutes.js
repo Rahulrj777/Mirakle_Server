@@ -34,14 +34,30 @@ router.post("/add", userAuth, async (req, res) => {
     let cart = await Cart.findOne({ userId })
 
     if (!cart) {
-      cart = new Cart({ userId, items: [{ ...item, quantity: item.quantity || 1 }] })
+      cart = new Cart({
+        userId,
+        items: [
+          {
+            ...item,
+            quantity: item.quantity || 1,
+            userEmail: req.user.email, // ✅ add email
+            userId, // Optional redundancy inside item
+          },
+        ],
+      })
     } else {
-      const existingIndex = cart.items.findIndex((i) => i._id.toString() === item._id && i.variantId === item.variantId)
-
+      const existingIndex = cart.items.findIndex(
+        (i) => i._id.toString() === item._id.toString() && i.variantId?.toString() === item.variantId?.toString()
+      )
       if (existingIndex > -1) {
         cart.items[existingIndex].quantity += item.quantity || 1
       } else {
-        cart.items.push({ ...item, quantity: item.quantity || 1 })
+        cart.items.push({
+          ...item,
+          quantity: item.quantity || 1,
+          userEmail: req.user.email, // ✅ add email
+          userId,
+        })
       }
     }
 
