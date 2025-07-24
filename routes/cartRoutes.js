@@ -41,7 +41,6 @@ router.post("/add", userAuth, async (req, res) => {
       );
       console.log("🛒 Incoming item:", item);
       console.log("📦 Existing items:", cart.items);
-      console.log("🔍 Matched item:", existingItem);
 
       if (existingIndex > -1) {
         cart.items[existingIndex].quantity += item.quantity || 1
