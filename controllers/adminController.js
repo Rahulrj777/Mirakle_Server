@@ -10,7 +10,6 @@ const generateToken = (id) => {
 export const adminSignup = async (req, res) => {
   const { name, email, password } = req.body;
 
-  // Check if an admin already exists in DB
   const existingAdmin = await Admin.findOne();
   if (existingAdmin) {
     return res.status(403).json({ message: "Admin already exists. Signup disabled." });
@@ -54,10 +53,8 @@ export const forgotPassword = async (req, res) => {
   admin.resetTokenExpiry = Date.now() + 3600000; // 1 hour
   await admin.save();
 
-  // For testing: send token in response (Replace with email in production)
   res.json({ message: "Reset token generated", resetToken });
 
-  // Optional: sendEmail(admin.email, "Reset Password", `Use this token: ${resetToken}`);
 };
 
 export const resetPassword = async (req, res) => {
