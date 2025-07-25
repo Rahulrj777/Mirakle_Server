@@ -27,10 +27,10 @@ router.post("/migrate-clean", userAuth, async (req, res) => {
   }
 })
 
-// ✅ FIXED: Add to cart logic integrated directly, removed controller middleware
+// ✅ ENHANCED: Handle variants without _id using index with better error handling
 router.post("/add", userAuth, async (req, res) => {
   try {
-    const { productId, variantIndex, variantId, quantity = 1 } = req.body // Expecting these fields
+    const { productId, variantIndex, variantId, quantity = 1 } = req.body
     const userId = req.user.id
 
     console.log("🛒 AddToCart Request:", { userId, productId, variantIndex, variantId, quantity })
@@ -82,18 +82,16 @@ router.post("/add", userAuth, async (req, res) => {
     }
 
     // Use the provided variantId or generate one from index
-    // This variantId is crucial for differentiating items by size/variant
     const finalVariantId = variantId || `${productId}_variant_${variantIndex}_${variant.size || "unknown"}`
 
-    // Check if item already exists in cart using both product _id and variantId
+    // Check if item already exists in cart
     const existingItem = userCart.items.find(
       (item) => item._id.toString() === productId && item.variantId === finalVariantId,
     )
 
-    // Construct the new item with all required fields for the Cart schema
     const newItem = {
       _id: new mongoose.Types.ObjectId(productId),
-      variantId: finalVariantId, // This is now a String
+      variantId: finalVariantId,
       title: product.title || "Unknown Product",
       images: {
         others: Array.isArray(product.images?.others)
@@ -105,7 +103,7 @@ router.post("/add", userAuth, async (req, res) => {
       size: variant.size || `${variant.weight?.value || "N/A"} ${variant.weight?.unit || ""}`,
       weight: {
         value: variant.weight?.value || variant.size || "N/A",
-        unit: variant.weight?.unit || (variant.size ? "size" : "unit"),
+        unit: variant.weight?.unit || "unit",
       },
       originalPrice: Number(variant.price) || 0,
       discountPercent: Number(variant.discountPercent) || 0,
@@ -118,12 +116,12 @@ router.post("/add", userAuth, async (req, res) => {
       existingItem.quantity += quantity
       console.log("✅ Updated existing item quantity:", existingItem.quantity)
     } else {
-      // Add new item to cart
+      // ✅ ENHANCED: Create new item with extra validation
       userCart.items.push(newItem)
       console.log("✅ Added new item to cart:", newItem)
     }
 
-    // Save with better error handling
+    // ✅ ENHANCED: Save with better error handling
     try {
       await userCart.save()
       console.log("✅ Cart saved successfully")
@@ -159,17 +157,9 @@ router.get("/", userAuth, async (req, res) => {
     console.log(`📦 Loading cart for user: ${userId}`)
 
     const cart = await Cart.findOne({ userId })
+    const items = cart?.items || []
 
-    if (!cart) {
-      console.log(`📦 No cart found for user ${userId}, returning empty.`)
-      return res.json({ items: [] })
-    }
-
-    const items = Array.isArray(cart.items) ? cart.items : []
-    console.log(
-      `📦 Found ${items.length} items in cart for user ${userId}. Cart object:`,
-      JSON.stringify(cart, null, 2),
-    )
+    console.log(`📦 Found ${items.length} items in cart for user ${userId}`)
     res.json({ items })
   } catch (error) {
     console.error("❌ Cart load error:", error)
@@ -189,17 +179,26 @@ router.post("/", userAuth, async (req, res) => {
       return res.status(400).json({ message: "Invalid items format" })
     }
 
-    // Prepare items for saving, ensuring they conform to schema
-    const validItems = []
+    // Use findOneAndUpdate with upsert: true to atomically find or create the cart.
+    // This prevents the E11000 duplicate key error.
+    const cart = await Cart.findOneAndUpdate(
+      { userId },
+      { $set: { items: [] } }, // Clear existing items, we'll re-add them from the payload
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
+    )
+    console.log(`findOneAndUpdate result for userId ${userId}:`, cart ? "Found/Created" : "Failed to find/create")
+
+    // Add items one by one with proper validation
     for (const item of items) {
       if (!item._id || !item.variantId) {
-        console.warn("⚠️ Skipping invalid item during sync (missing _id or variantId):", item)
+        console.warn("⚠️ Skipping invalid item during sync:", item)
         continue
       }
+
       try {
-        validItems.push({
+        const cartItem = {
           _id: new mongoose.Types.ObjectId(item._id),
-          variantId: item.variantId, // This is now a String
+          variantId: item.variantId,
           title: item.title || "Unknown Product",
           images: {
             others:
@@ -213,43 +212,36 @@ router.post("/", userAuth, async (req, res) => {
           discountPercent: item.discountPercent || 0,
           currentPrice: item.currentPrice || 0,
           quantity: item.quantity || 1,
-        })
+        }
+
+        cart.items.push(cartItem)
       } catch (itemError) {
-        console.error("❌ Error processing item during sync for validation:", item, itemError)
+        console.error("❌ Error processing item during sync:", item, itemError)
         continue
       }
     }
 
-    console.log(`Attempting to findOneAndUpdate cart for user ${userId} with ${validItems.length} valid items.`)
-
-    // Use findOneAndUpdate with upsert: true to atomically find or create the cart.
-    // This is the most robust way to handle the unique userId constraint.
-    const updatedCart = await Cart.findOneAndUpdate(
-      { userId },
-      { $set: { items: validItems } }, // Directly set the validItems array
-      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
-    )
-
-    if (!updatedCart) {
-      console.error(`❌ findOneAndUpdate did not return a cart for user ${userId}.`)
-      return res.status(500).json({ message: "Failed to update or create cart." })
+    // Save the cart with the new items. This will now be an update operation
+    // on the document already found or created by findOneAndUpdate.
+    try {
+      await cart.save()
+      console.log("✅ Cart synced successfully with", cart.items.length, "items")
+    } catch (saveError) {
+      console.error("❌ Cart sync save error:", saveError)
+      if (saveError.name === "ValidationError" || saveError.name === "VersionError") {
+        console.log("🧹 Attempting to clean and re-sync cart due to validation/version error")
+        await Cart.findOneAndDelete({ userId })
+        const cleanCart = new Cart({ userId, items: cart.items }) // Re-add the items that were just processed
+        await cleanCart.save()
+        console.log("✅ Cart re-synced successfully after cleanup")
+      } else {
+        throw saveError
+      }
     }
 
-    console.log("✅ Cart synced successfully with", updatedCart.items.length, "items. Cart ID:", updatedCart._id)
-    res.status(200).json({ message: "Cart synced successfully", items: updatedCart.items })
+    res.status(200).json({ message: "Cart synced successfully", items: cart.items })
   } catch (error) {
     console.error("❌ Cart sync error:", error)
-    // If it's a duplicate key error, it means upsert failed for some reason,
-    // or the unique index is corrupted.
-    if (error.code === 11000) {
-      console.error(
-        "⚠️ Duplicate key error during cart sync. This should not happen with findOneAndUpdate(upsert:true). Consider re-indexing or checking MongoDB version.",
-      )
-      return res.status(500).json({
-        message: "Server error: Duplicate cart detected. Please try clearing your cart or contact support.",
-        error: error.message,
-      })
-    }
     res.status(500).json({ message: "Server error while syncing cart", error: error.message })
   }
 })
