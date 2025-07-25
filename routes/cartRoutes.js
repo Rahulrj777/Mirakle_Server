@@ -3,21 +3,34 @@ const router = express.Router()
 const mongoose = require("mongoose")
 const User = mongoose.model("User")
 const Product = mongoose.model("Product")
-const requireLogin = require("../middleware/requireLogin")
+const requireLogin = require("../middleware/requireLogin") // Assuming this is your authentication middleware
 const { generateVariantId } = require("../utils/cartUtils") // Import the new utility
 
 // Helper to get user cart and populate it
 async function getUserCart(userId) {
+  // Use .lean() to get plain JavaScript objects for easier manipulation and comparison
   return await User.findById(userId)
     .populate({
       path: "cart.items._id",
       select: "_id title images variants", // Select necessary fields for population
     })
-    .lean() // Add .lean() to get plain JavaScript objects, which can sometimes help with comparison issues
+    .lean()
 }
 
+// Helper to save user cart (since .lean() returns plain objects, we need to re-fetch and save)
+async function saveUserCart(userId, newItems) {
+  const user = await User.findById(userId)
+  if (user) {
+    user.cart.items = newItems // Assign the updated items array
+    await user.save()
+    return user // Return the Mongoose document for further use if needed
+  }
+  return null
+}
+
+// ✅ NEW ROUTE: Add item to cart
 router.post("/cart/add", requireLogin, async (req, res) => {
-  const { productId, quantity, variantIndex } = req.body
+  const { productId, quantity, variantIndex } = req.body // Removed clientVariantId as it's now generated consistently
 
   if (!productId || quantity <= 0 || variantIndex === undefined) {
     console.error("Backend /cart/add: Invalid request data - missing productId, quantity, or variantIndex.")
@@ -31,12 +44,11 @@ router.post("/cart/add", requireLogin, async (req, res) => {
       return res.status(404).json({ message: "User not found" })
     }
 
-    let userCart = await getUserCart(req.user._id)
-    if (!userCart) {
-      console.warn(`Backend /cart/add: Cart not found for user ${req.user._id}, initializing new cart.`)
-      // If user exists but no cart, create an empty cart within the user document
+    // Ensure cart structure exists
+    if (!user.cart || !Array.isArray(user.cart.items)) {
       user.cart = { items: [] }
-      userCart = user // Use the updated user object
+      await user.save() // Save the initialized cart structure
+      console.log(`Backend /cart/add: Initialized empty cart for user ${req.user._id}.`)
     }
 
     const product = await Product.findById(productId)
@@ -58,7 +70,8 @@ router.post("/cart/add", requireLogin, async (req, res) => {
       `Backend /cart/add: Product ID: ${productId}, Variant Index: ${variantIndex}, Generated Variant ID: ${uniqueCartItemId}`,
     )
 
-    const existingItem = userCart.cart.items.find(
+    // Find existing item in the user's cart (using the Mongoose document directly for modification)
+    const existingItem = user.cart.items.find(
       (item) =>
         String(item._id).trim() === String(productId).trim() &&
         String(item.variantId).trim() === String(uniqueCartItemId).trim(),
@@ -89,11 +102,11 @@ router.post("/cart/add", requireLogin, async (req, res) => {
         ),
         quantity: quantity,
       }
-      userCart.cart.items.push(newItem) // Access cart.items
+      user.cart.items.push(newItem)
       console.log(`Backend /cart/add: Added new item ${productId} (${uniqueCartItemId}) with quantity ${quantity}`)
     }
 
-    await userCart.save()
+    await user.save() // Save the user document with updated cart
     // Re-populate to send back full item details
     const updatedCart = await getUserCart(req.user._id)
     res.json({ message: "Item added to cart successfully", cart: updatedCart.cart.items })
@@ -103,6 +116,7 @@ router.post("/cart/add", requireLogin, async (req, res) => {
   }
 })
 
+// Get user's cart
 router.get("/cart", requireLogin, async (req, res) => {
   try {
     const userCart = await getUserCart(req.user._id)
@@ -112,14 +126,14 @@ router.get("/cart", requireLogin, async (req, res) => {
       return res.json({ cart: [] }) // Return empty cart if not found
     }
 
-    res.json({ cart: userCart.cart.items }) // Access cart.items
+    res.json({ cart: userCart.cart.items })
   } catch (err) {
     console.error("Backend /cart GET error:", err)
     res.status(500).json({ message: "Failed to retrieve cart", error: err.message })
   }
 })
 
-// ✅ UPDATED ROUTE: Use /cart/update-quantity for clarity and consistency
+// Update item quantity in cart
 router.put("/cart/update-quantity", requireLogin, async (req, res) => {
   const { productId, variantId, quantity } = req.body
 
@@ -135,15 +149,8 @@ router.put("/cart/update-quantity", requireLogin, async (req, res) => {
       return res.status(404).json({ message: "User not found" })
     }
 
-    const userCart = await getUserCart(req.user._id)
-
-    if (!userCart) {
-      console.warn(`Backend /cart/update-quantity: Cart not found for user ${req.user._id}.`)
-      return res.status(404).json({ message: "Cart not found" })
-    }
-
-    // ✅ CRITICAL FIX: Use variantId for finding item to update
-    const itemToUpdate = userCart.cart.items.find(
+    // Find item to update using the Mongoose document directly
+    const itemToUpdate = user.cart.items.find(
       (item) =>
         String(item._id).trim() === String(productId).trim() &&
         String(item.variantId).trim() === String(variantId).trim(),
@@ -158,7 +165,7 @@ router.put("/cart/update-quantity", requireLogin, async (req, res) => {
 
     itemToUpdate.quantity = quantity
 
-    await userCart.save()
+    await user.save() // Save the user document with updated cart
     const updatedCart = await getUserCart(req.user._id)
     res.json({ message: "Cart updated successfully", cart: updatedCart.cart.items })
   } catch (err) {
@@ -167,7 +174,7 @@ router.put("/cart/update-quantity", requireLogin, async (req, res) => {
   }
 })
 
-// ✅ UPDATED ROUTE: Use /cart/remove-item for clarity and consistency
+// Remove item from cart
 router.delete("/cart/remove-item", requireLogin, async (req, res) => {
   const { productId, variantId } = req.body // Changed from query to body for consistency
 
@@ -183,15 +190,8 @@ router.delete("/cart/remove-item", requireLogin, async (req, res) => {
       return res.status(404).json({ message: "User not found" })
     }
 
-    const userCart = await getUserCart(req.user._id)
-
-    if (!userCart) {
-      console.warn(`Backend /cart/remove-item: Cart not found for user ${req.user._id}.`)
-      return res.status(404).json({ message: "Cart not found" })
-    }
-
-    const initialLength = userCart.cart.items.length
-    userCart.cart.items = userCart.cart.items.filter(
+    const initialLength = user.cart.items.length
+    user.cart.items = user.cart.items.filter(
       (item) =>
         !(
           String(item._id).trim() === String(productId).trim() &&
@@ -199,12 +199,12 @@ router.delete("/cart/remove-item", requireLogin, async (req, res) => {
         ),
     )
 
-    if (userCart.cart.items.length === initialLength) {
+    if (user.cart.items.length === initialLength) {
       console.warn(`Backend /cart/remove-item: Item ${productId} (${variantId}) not found in cart to remove.`)
       return res.status(404).json({ message: "Item not found in cart to remove" })
     }
 
-    await userCart.save()
+    await user.save()
     const updatedCart = await getUserCart(req.user._id)
     res.json({ message: "Item removed from cart successfully", cart: updatedCart.cart.items })
   } catch (err) {
@@ -213,6 +213,7 @@ router.delete("/cart/remove-item", requireLogin, async (req, res) => {
   }
 })
 
+// Clear entire cart
 router.delete("/cart/clear", requireLogin, async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
@@ -221,16 +222,9 @@ router.delete("/cart/clear", requireLogin, async (req, res) => {
       return res.status(404).json({ message: "User not found" })
     }
 
-    const userCart = await getUserCart(req.user._id)
+    user.cart.items = []
 
-    if (!userCart) {
-      console.warn(`Backend /cart/clear: Cart not found for user ${req.user._id}.`)
-      return res.status(404).json({ message: "Cart not found" })
-    }
-
-    userCart.cart.items = [] // Access cart.items
-
-    await userCart.save()
+    await user.save()
     const updatedCart = await getUserCart(req.user._id)
     res.json({ message: "Cart cleared successfully", cart: updatedCart.cart.items })
   } catch (err) {
@@ -239,7 +233,7 @@ router.delete("/cart/clear", requireLogin, async (req, res) => {
   }
 })
 
-// This route is for syncing the client-side cart to the backend, typically on login.
+// Sync client-side cart to backend (typically on login)
 router.post("/cart", requireLogin, async (req, res) => {
   const { items: clientItems } = req.body
 
@@ -255,14 +249,14 @@ router.post("/cart", requireLogin, async (req, res) => {
       return res.status(404).json({ message: "User not found" })
     }
 
-    let userCart = await getUserCart(req.user._id)
-    if (!userCart) {
-      console.warn(`Backend /cart POST (sync): Cart not found for user ${req.user._id}, creating new cart.`)
-      user.cart = { items: [] } // Create new user with empty cart
-      userCart = user
+    // Ensure cart structure exists
+    if (!user.cart || !Array.isArray(user.cart.items)) {
+      user.cart = { items: [] }
+      await user.save() // Save the initialized cart structure
+      console.log(`Backend /cart POST (sync): Initialized empty cart for user ${req.user._id}.`)
     }
 
-    userCart.cart.items = [] // ✅ CRITICAL: Clear existing cart items before re-populating from client
+    user.cart.items = [] // ✅ CRITICAL: Clear existing cart items before re-populating from client
 
     for (const clientItem of clientItems) {
       console.log(
@@ -276,16 +270,20 @@ router.post("/cart", requireLogin, async (req, res) => {
       }
 
       // Find the variant based on the clientItem.variantId
-      const variant = product.variants.find((v, index) => {
-        // ✅ CRITICAL FIX: Use the consistent generateVariantId utility to find the matching variant
-        const generatedVariantIdForComparison = generateVariantId(product._id, v, index)
-        console.log(
-          `Backend /cart POST (sync): Comparing clientVariantId '${clientItem.variantId}' with generated '${generatedVariantIdForComparison}' for variant at index ${index}.`,
-        )
-        return generatedVariantIdForComparison === clientItem.variantId
-      })
+      // We need to iterate through product.variants and generate their IDs to find a match
+      let matchedVariant = null
+      let matchedVariantIndex = -1
+      for (let i = 0; i < product.variants.length; i++) {
+        const v = product.variants[i]
+        const generatedVariantIdForComparison = generateVariantId(product._id, v, i)
+        if (String(generatedVariantIdForComparison).trim() === String(clientItem.variantId).trim()) {
+          matchedVariant = v
+          matchedVariantIndex = i
+          break
+        }
+      }
 
-      if (!variant) {
+      if (!matchedVariant) {
         console.warn(
           `Backend /cart POST (sync): Variant not found for product ID: ${clientItem._id} and clientVariantId: ${clientItem.variantId}. Skipping item.`,
         )
@@ -293,7 +291,7 @@ router.post("/cart", requireLogin, async (req, res) => {
       }
 
       // Check if this specific product-variant combination already exists in the *newly building* cart
-      const existingAggregatedItem = userCart.cart.items.find(
+      const existingAggregatedItem = user.cart.items.find(
         (item) =>
           String(item._id).trim() === String(clientItem._id).trim() &&
           String(item.variantId).trim() === String(clientItem.variantId).trim(),
@@ -310,26 +308,28 @@ router.post("/cart", requireLogin, async (req, res) => {
           title: product.title,
           images: product.images,
           variantId: clientItem.variantId, // Use the variantId from the client, which is now consistent
-          size: variant.size || (variant.weight ? `${variant.weight.value} ${variant.weight.unit}` : "N/A"),
+          size:
+            matchedVariant.size ||
+            (matchedVariant.weight ? `${matchedVariant.weight.value} ${matchedVariant.weight.unit}` : "N/A"),
           weight: {
-            value: variant?.weight?.value || variant?.size,
-            unit: variant?.weight?.unit || (variant?.size ? "size" : "unit"),
+            value: matchedVariant?.weight?.value || matchedVariant?.size,
+            unit: matchedVariant?.weight?.unit || (matchedVariant?.size ? "size" : "unit"),
           },
-          originalPrice: Number.parseFloat(variant.price),
-          discountPercent: Number.parseFloat(variant.discountPercent) || 0,
+          originalPrice: Number.parseFloat(matchedVariant.price),
+          discountPercent: Number.parseFloat(matchedVariant.discountPercent) || 0,
           currentPrice: Number.parseFloat(
-            (variant.price - (variant.price * (variant.discountPercent || 0)) / 100).toFixed(2),
+            (matchedVariant.price - (matchedVariant.price * (matchedVariant.discountPercent || 0)) / 100).toFixed(2),
           ),
           quantity: clientItem.quantity,
         }
-        userCart.cart.items.push(newItem)
+        user.cart.items.push(newItem)
         console.log(
           `Backend /cart POST (sync): Added new item ${clientItem._id} (${clientItem.variantId}) with quantity ${clientItem.quantity}`,
         )
       }
     }
 
-    await userCart.save()
+    await user.save()
     const populatedCart = await getUserCart(req.user._id)
     res.json({ message: "Cart synchronized successfully", cart: populatedCart.cart.items })
   } catch (err) {

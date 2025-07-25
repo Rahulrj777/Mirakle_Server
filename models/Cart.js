@@ -3,24 +3,17 @@ import mongoose from "mongoose"
 const itemSchema = new mongoose.Schema(
   {
     _id: { type: mongoose.Schema.Types.ObjectId, required: true },
-    variantId: { type: String, required: true }, // ✅ Ensure this is String and required
+    variantId: { type: String }, // ✅ CRITICAL FIX: Changed to String
     title: { type: String, required: true },
     images: {
-      others: [
-        {
-          url: { type: String, default: "/placeholder.svg" }, // ✅ Added default for safety
-          _id: false,
-        },
-      ],
+      others: [{ type: String }],
     },
     size: { type: String },
     weight: {
       value: { type: mongoose.Schema.Types.Mixed },
       unit: { type: String },
     },
-    originalPrice: { type: Number, default: 0 }, // ✅ Added default
-    discountPercent: { type: Number, default: 0 }, // ✅ Added default
-    currentPrice: { type: Number, required: true, default: 0 }, // ✅ Added default
+    currentPrice: { type: Number, required: true },
     quantity: { type: Number, required: true, default: 1 },
   },
   { _id: false },
