@@ -3,7 +3,7 @@ import mongoose from "mongoose"
 const itemSchema = new mongoose.Schema(
   {
     _id: { type: mongoose.Schema.Types.ObjectId, required: true },
-    variantId: { type: String }, // ✅ CRITICAL FIX: Changed to String
+    variantId: { type: String }, // ✅ CRITICAL: Must be String
     title: { type: String, required: true },
     images: {
       others: [{ type: String }],
