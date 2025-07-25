@@ -7,6 +7,7 @@ import { fileURLToPath } from "url"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
 dotenv.config()
 
 import bannerRoutes from "./routes/bannerRoutes.js"
@@ -14,15 +15,15 @@ import productRoutes from "./routes/productRoutes.js"
 import userRoutes from "./routes/userRoutes.js"
 import cartRoutes from "./routes/cartRoutes.js"
 import offerBannerRoutes from "./routes/offerBannerRoutes.js"
-import adminRoutes from "./routes/adminRoutes.js"
-import locationRoutes from "./routes/locationRoutes.js"
+import adminRoutes from "./routes/adminRoutes.js";
+import locationRoutes from './routes/locationRoutes.js';
 
 const app = express()
 
 const allowedOrigins = [
   "https://mirakle-website-m1xp.vercel.app",
   "https://mirakle-client.vercel.app",
-  "https://mirakle-admin.vercel.app",
+  "https://mirakle-admin.vercel.app"
 ]
 
 const corsOptions = {
@@ -39,6 +40,7 @@ const corsOptions = {
 app.use(cors(corsOptions))
 app.use(express.json({ limit: "10mb" }))
 app.use(express.urlencoded({ extended: true, limit: "10mb" }))
+
 app.use("/uploads", express.static(path.join(__dirname, "uploads")))
 
 app.use((req, res, next) => {
@@ -51,8 +53,8 @@ app.use("/api/banners", bannerRoutes)
 app.use("/api/users", userRoutes)
 app.use("/api/cart", cartRoutes)
 app.use("/api/offer-banners", offerBannerRoutes)
-app.use("/api/admin", adminRoutes)
-app.use("/api/location", locationRoutes)
+app.use("/api/admin", adminRoutes);
+app.use('/api/location', locationRoutes);
 
 app.get("/", (req, res) => {
   res.send("Mirakle Server is Running")
