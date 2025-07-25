@@ -218,11 +218,13 @@ router.post("/", userAuth, async (req, res) => {
       }
     }
 
+    console.log(`Attempting to findOneAndUpdate cart for user ${userId} with ${validItems.length} valid items.`)
+
     // Use findOneAndUpdate with upsert: true to atomically find or create the cart.
     // This is the most robust way to handle the unique userId constraint.
     const updatedCart = await Cart.findOneAndUpdate(
       { userId },
-      { $set: { items: validItems } }, // Set the entire items array
+      { $set: { items: validItems } }, // Directly set the validItems array
       { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
     )
 
