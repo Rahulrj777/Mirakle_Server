@@ -1,305 +1,291 @@
-import express from "express"
-import Cart from "../models/Cart.js"
-import Product from "../models/Product.js"
-import userAuth from "../middleware/userAuth.js"
-import mongoose from "mongoose"
-
+const express = require("express")
 const router = express.Router()
+const mongoose = require("mongoose")
+const User = mongoose.model("User")
+const Product = mongoose.model("Product")
+const requireLogin = require("../middleware/requireLogin")
 
-// ✅ NEW: Clear corrupted cart data (temporary migration route)
-router.post("/migrate-clean", userAuth, async (req, res) => {
-  try {
-    const userId = req.user.id
-    console.log(`🧹 Cleaning corrupted cart data for user: ${userId}`)
+router.post("/cart/add", requireLogin, async (req, res) => {
+  const { productId, quantity, variantIndex, clientVariantId } = req.body
 
-    // Delete the existing cart to start fresh
-    await Cart.findOneAndDelete({ userId })
-
-    // Create a new empty cart
-    const newCart = new Cart({ userId, items: [] })
-    await newCart.save()
-
-    console.log("✅ Cart cleaned and recreated successfully")
-    res.json({ message: "Cart cleaned successfully", items: [] })
-  } catch (error) {
-    console.error("❌ Cart cleanup error:", error)
-    res.status(500).json({ error: "Failed to clean cart" })
+  if (!productId || quantity <= 0 || variantIndex === undefined) {
+    return res.status(400).json({ message: "Invalid request data" })
   }
-})
 
-// ✅ ENHANCED: Handle variants without _id using index with better error handling
-router.post("/add", userAuth, async (req, res) => {
   try {
-    const { productId, variantIndex, variantId, quantity = 1 } = req.body
-    const userId = req.user.id
-
-    console.log("🛒 AddToCart Request:", { userId, productId, variantIndex, variantId, quantity })
-
-    // Validate required fields
-    if (!productId || (variantIndex === undefined && !variantId) || !userId) {
-      console.error("❌ Missing required fields:", { productId, variantIndex, variantId, userId })
-      return res
-        .status(400)
-        .json({ message: "Invalid item data - missing productId, variantIndex/variantId, or userId" })
+    const user = await User.findById(req.user._id)
+    if (!user) {
+      return res.status(404).json({ message: "User not found" })
     }
 
-    // Verify product exists
+    const userCart = await User.findById(req.user._id).populate("cart.items._id", "_id title images variants")
+
+    if (!userCart) {
+      return res.status(404).json({ message: "Cart not found for user" })
+    }
+
     const product = await Product.findById(productId)
     if (!product) {
-      console.error("❌ Product not found:", productId)
       return res.status(404).json({ message: "Product not found" })
     }
 
-    // Get variant by index if provided, otherwise try to find by _id
-    let variant
-    if (variantIndex !== undefined) {
-      variant = product.variants[variantIndex]
-      if (!variant) {
-        console.error("❌ Variant not found at index:", variantIndex)
-        return res.status(404).json({ message: "Variant not found at specified index" })
-      }
-    } else {
-      // Fallback to finding by variantId if index is not provided
-      variant = product.variants.find((v) => v._id?.toString() === variantId)
-      if (!variant) {
-        console.error("❌ Variant not found with ID:", variantId)
-        return res.status(404).json({ message: "Variant not found" })
-      }
+    // Find if the item already exists in the cart
+    // The `finalVariantId` here needs to be constructed exactly like the `variantId` on the frontend.
+    // Frontend uses: `${product._id}_${variantKey}` where variantKey is selectedVariant._id or a composite.
+    // So, we need to ensure the backend's `finalVariantId` also includes the `productId` prefix.
+
+    // Find the selected variant from the product's variants array
+    const selectedVariant = product.variants[variantIndex]
+    if (!selectedVariant) {
+      return res.status(400).json({ message: "Invalid variant selected" })
     }
 
-    // ✅ ENHANCED: Try to find cart, if corrupted, recreate it
-    let userCart
-    try {
-      userCart = await Cart.findOne({ userId })
-    } catch (findError) {
-      console.warn("⚠️ Cart find error, recreating:", findError.message)
-      await Cart.findOneAndDelete({ userId })
-      userCart = null
-    }
+    // Determine the variant-specific key (e.g., variant's _id, size, or weight composite)
+    // This part should match the `variantKey` logic in ProductDetail.jsx
+    const variantSpecificKey =
+      selectedVariant._id?.toString() ||
+      (selectedVariant.size || selectedVariant.weight
+        ? `${selectedVariant.size || selectedVariant.weight.value}_${selectedVariant.weight?.unit || ""}`
+        : variantIndex.toString()) // Ensure it's a string for consistency
 
-    if (!userCart) {
-      userCart = new Cart({ userId, items: [] })
-    }
+    // Construct the full unique variantId, matching frontend's pattern: productId_variantSpecificKey
+    const uniqueCartItemId = `${productId}_${variantSpecificKey}`
 
-    // Use the provided variantId or generate one from index
-    const finalVariantId = variantId || `${productId}_variant_${variantIndex}_${variant.size || "unknown"}`
+    console.log(`Backend: Incoming clientVariantId: ${clientVariantId}`)
+    console.log(`Backend: Constructed uniqueCartItemId for comparison: ${uniqueCartItemId}`)
 
-    // Check if item already exists in cart
     const existingItem = userCart.items.find(
-      (item) => item._id.toString() === productId && item.variantId === finalVariantId,
+      (item) => item._id.toString() === productId && item.variantId === uniqueCartItemId,
     )
-
-    const newItem = {
-      _id: new mongoose.Types.ObjectId(productId),
-      variantId: finalVariantId,
-      title: product.title || "Unknown Product",
-      images: {
-        others: Array.isArray(product.images?.others)
-          ? product.images.others.map((img) => ({
-              url: typeof img === "string" ? img : img?.url || "/placeholder.svg",
-            }))
-          : [{ url: "/placeholder.svg" }],
-      },
-      size: variant.size || `${variant.weight?.value || "N/A"} ${variant.weight?.unit || ""}`,
-      weight: {
-        value: variant.weight?.value || variant.size || "N/A",
-        unit: variant.weight?.unit || "unit",
-      },
-      originalPrice: Number(variant.price) || 0,
-      discountPercent: Number(variant.discountPercent) || 0,
-      currentPrice: Number(variant.price - (variant.price * (variant.discountPercent || 0)) / 100) || 0,
-      quantity: Number(quantity) || 1,
-    }
 
     if (existingItem) {
-      // Update quantity of existing item
+      // If item exists, increment quantity
       existingItem.quantity += quantity
-      console.log("✅ Updated existing item quantity:", existingItem.quantity)
+      console.log(
+        `Backend: Incremented quantity for existing item ${productId} (${uniqueCartItemId}) to ${existingItem.quantity}`,
+      )
     } else {
-      // ✅ ENHANCED: Create new item with extra validation
+      // If item does not exist, add new item
+      const newItem = {
+        _id: productId,
+        title: product.title,
+        images: product.images,
+        variantId: uniqueCartItemId, // Use the consistently constructed uniqueCartItemId here
+        size:
+          selectedVariant.size ||
+          (selectedVariant.weight ? `${selectedVariant.weight.value} ${selectedVariant.weight.unit}` : "N/A"),
+        weight: {
+          value: selectedVariant?.weight?.value || selectedVariant?.size,
+          unit: selectedVariant?.weight?.unit || (selectedVariant?.size ? "size" : "unit"),
+        },
+        originalPrice: Number.parseFloat(selectedVariant.price),
+        discountPercent: Number.parseFloat(selectedVariant.discountPercent) || 0,
+        currentPrice: Number.parseFloat(
+          (selectedVariant.price - (selectedVariant.price * (selectedVariant.discountPercent || 0)) / 100).toFixed(2),
+        ),
+        quantity: quantity,
+      }
       userCart.items.push(newItem)
-      console.log("✅ Added new item to cart:", newItem)
+      console.log(`Backend: Added new item ${productId} (${uniqueCartItemId}) with quantity ${quantity}`)
     }
 
-    // ✅ ENHANCED: Save with better error handling
-    try {
-      await userCart.save()
-      console.log("✅ Cart saved successfully")
-    } catch (saveError) {
-      console.error("❌ Cart save error:", saveError)
-      // If save fails due to validation, try to clean and recreate
-      if (saveError.name === "ValidationError" || saveError.name === "VersionError") {
-        console.log("🧹 Attempting to clean and recreate cart due to validation/version error")
-        await Cart.findOneAndDelete({ userId })
-        const cleanCart = new Cart({ userId, items: [newItem] })
-        await cleanCart.save()
-        console.log("✅ Cart recreated successfully")
+    await userCart.save()
+    res.json({ message: "Item added to cart successfully", cart: userCart.items })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: "Failed to add item to cart", error: err.message })
+  }
+})
+
+router.get("/cart", requireLogin, async (req, res) => {
+  try {
+    const userCart = await User.findById(req.user._id).populate("cart.items._id", "_id title images variants")
+
+    if (!userCart) {
+      return res.status(404).json({ message: "Cart not found for user" })
+    }
+
+    res.json({ cart: userCart.items })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: "Failed to retrieve cart", error: err.message })
+  }
+})
+
+router.put("/cart/update/:productId", requireLogin, async (req, res) => {
+  const { productId } = req.params
+  const { quantity } = req.body
+
+  if (!productId || quantity === undefined || quantity <= 0) {
+    return res.status(400).json({ message: "Invalid request data" })
+  }
+
+  try {
+    const user = await User.findById(req.user._id)
+    if (!user) {
+      return res.status(404).json({ message: "User not found" })
+    }
+
+    const userCart = await User.findById(req.user._id).populate("cart.items._id", "_id title images variants")
+
+    if (!userCart) {
+      return res.status(404).json({ message: "Cart not found for user" })
+    }
+
+    const itemIndex = userCart.items.findIndex((item) => item._id.toString() === productId)
+
+    if (itemIndex === -1) {
+      return res.status(404).json({ message: "Item not found in cart" })
+    }
+
+    userCart.items[itemIndex].quantity = quantity
+
+    await userCart.save()
+    res.json({ message: "Cart updated successfully", cart: userCart.items })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: "Failed to update cart", error: err.message })
+  }
+})
+
+router.delete("/cart/remove/:productId", requireLogin, async (req, res) => {
+  const { productId } = req.params
+
+  if (!productId) {
+    return res.status(400).json({ message: "Invalid request data" })
+  }
+
+  try {
+    const user = await User.findById(req.user._id)
+    if (!user) {
+      return res.status(404).json({ message: "User not found" })
+    }
+
+    const userCart = await User.findById(req.user._id).populate("cart.items._id", "_id title images variants")
+
+    if (!userCart) {
+      return res.status(404).json({ message: "Cart not found for user" })
+    }
+
+    userCart.items = userCart.items.filter((item) => item._id.toString() !== productId)
+
+    await userCart.save()
+    res.json({ message: "Item removed from cart successfully", cart: userCart.items })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: "Failed to remove item from cart", error: err.message })
+  }
+})
+
+router.delete("/cart/clear", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+    if (!user) {
+      return res.status(404).json({ message: "User not found" })
+    }
+
+    const userCart = await User.findById(req.user._id).populate("cart.items._id", "_id title images variants")
+
+    if (!userCart) {
+      return res.status(404).json({ message: "Cart not found for user" })
+    }
+
+    userCart.items = []
+
+    await userCart.save()
+    res.json({ message: "Cart cleared successfully", cart: userCart.items })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: "Failed to clear cart", error: err.message })
+  }
+})
+
+router.post("/", requireLogin, async (req, res) => {
+  const { clientItems } = req.body
+
+  if (!clientItems || !Array.isArray(clientItems)) {
+    return res.status(400).json({ message: "Invalid client items data" })
+  }
+
+  try {
+    const user = await User.findById(req.user._id)
+    if (!user) {
+      return res.status(404).json({ message: "User not found" })
+    }
+
+    const userCart = await User.findById(req.user._id)
+
+    if (!userCart) {
+      return res.status(404).json({ message: "Cart not found for user" })
+    }
+
+    userCart.items = [] // Clear existing cart items
+
+    for (const clientItem of clientItems) {
+      // Add more detailed logging for debugging if needed:
+      // Inside the loop for `clientItems`:
+      console.log(
+        `Backend Sync: Processing client item - Product ID: ${clientItem._id}, Variant ID: ${clientItem.variantId}, Quantity: ${clientItem.quantity}`,
+      )
+
+      const product = await Product.findById(clientItem._id)
+      if (!product) {
+        console.warn(`Product not found for ID: ${clientItem._id}`)
+        continue // Skip to the next item
+      }
+
+      const existingAggregatedItem = userCart.items.find(
+        (item) => item._id.toString() === clientItem._id && item.variantId === clientItem.variantId,
+      )
+
+      console.log(`Backend Sync: Found existing aggregated item: ${!!existingAggregatedItem}`)
+
+      if (existingAggregatedItem) {
+        existingAggregatedItem.quantity += clientItem.quantity
       } else {
-        throw saveError
-      }
-    }
+        const variant = product.variants.find((v) => {
+          const variantSpecificKey =
+            v._id?.toString() ||
+            (v.size || v.weight
+              ? `${v.size || v.weight.value}_${v.weight?.unit || ""}`
+              : product.variants.indexOf(v).toString())
+          const uniqueCartItemId = `${clientItem._id}_${variantSpecificKey}`
+          return uniqueCartItemId === clientItem.variantId
+        })
 
-    res.status(200).json({
-      message: "Added to cart successfully",
-      cart: userCart,
-      itemsCount: userCart.items.length,
-    })
-  } catch (error) {
-    console.error("❌ AddToCart Error:", error)
-    res.status(500).json({ message: "Server error", error: error.message })
-  }
-})
-
-// Get cart items
-router.get("/", userAuth, async (req, res) => {
-  try {
-    const userId = req.user.id
-    console.log(`📦 Loading cart for user: ${userId}`)
-
-    const cart = await Cart.findOne({ userId })
-    const items = cart?.items || []
-
-    console.log(`📦 Found ${items.length} items in cart for user ${userId}`)
-    res.json({ items })
-  } catch (error) {
-    console.error("❌ Cart load error:", error)
-    res.status(500).json({ error: "Failed to load cart" })
-  }
-})
-
-// ✅ FIXED: Sync multiple cart items with proper validation and atomic upsert
-router.post("/", userAuth, async (req, res) => {
-  try {
-    const userId = req.user.id
-    const { items } = req.body
-
-    console.log(`🔄 Syncing cart items for user ${userId}. Items count: ${items?.length || 0}`)
-
-    if (!items || !Array.isArray(items)) {
-      return res.status(400).json({ message: "Invalid items format" })
-    }
-
-    // Use findOneAndUpdate with upsert: true to atomically find or create the cart.
-    // This prevents the E11000 duplicate key error.
-    const cart = await Cart.findOneAndUpdate(
-      { userId },
-      { $set: { items: [] } }, // Clear existing items, we'll re-add them from the payload
-      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
-    )
-    console.log(`findOneAndUpdate result for userId ${userId}:`, cart ? "Found/Created" : "Failed to find/create")
-
-    // Add items one by one with proper validation
-    for (const item of items) {
-      if (!item._id || !item.variantId) {
-        console.warn("⚠️ Skipping invalid item during sync:", item)
-        continue
-      }
-
-      try {
-        const cartItem = {
-          _id: new mongoose.Types.ObjectId(item._id),
-          variantId: item.variantId,
-          title: item.title || "Unknown Product",
-          images: {
-            others:
-              item.images?.others?.map((img) => ({
-                url: typeof img === "string" ? img : img?.url || "/placeholder.svg",
-              })) || [],
-          },
-          size: item.size,
-          weight: item.weight || { value: item.size, unit: "unit" },
-          originalPrice: item.originalPrice || item.currentPrice || 0,
-          discountPercent: item.discountPercent || 0,
-          currentPrice: item.currentPrice || 0,
-          quantity: item.quantity || 1,
+        if (!variant) {
+          console.warn(`Variant not found for product ID: ${clientItem._id} and variantId: ${clientItem.variantId}`)
+          continue
         }
 
-        cart.items.push(cartItem)
-      } catch (itemError) {
-        console.error("❌ Error processing item during sync:", item, itemError)
-        continue
+        const newItem = {
+          _id: clientItem._id,
+          title: product.title,
+          images: product.images,
+          variantId: clientItem.variantId,
+          size: variant.size || (variant.weight ? `${variant.weight.value} ${variant.weight.unit}` : "N/A"),
+          weight: {
+            value: variant?.weight?.value || variant?.size,
+            unit: variant?.weight?.unit || (variant?.size ? "size" : "unit"),
+          },
+          originalPrice: Number.parseFloat(variant.price),
+          discountPercent: Number.parseFloat(variant.discountPercent) || 0,
+          currentPrice: Number.parseFloat(
+            (variant.price - (variant.price * (variant.discountPercent || 0)) / 100).toFixed(2),
+          ),
+          quantity: clientItem.quantity,
+        }
+        userCart.items.push(newItem)
       }
     }
 
-    // Save the cart with the new items. This will now be an update operation
-    // on the document already found or created by findOneAndUpdate.
-    try {
-      await cart.save()
-      console.log("✅ Cart synced successfully with", cart.items.length, "items")
-    } catch (saveError) {
-      console.error("❌ Cart sync save error:", saveError)
-      if (saveError.name === "ValidationError" || saveError.name === "VersionError") {
-        console.log("🧹 Attempting to clean and re-sync cart due to validation/version error")
-        await Cart.findOneAndDelete({ userId })
-        const cleanCart = new Cart({ userId, items: cart.items }) // Re-add the items that were just processed
-        await cleanCart.save()
-        console.log("✅ Cart re-synced successfully after cleanup")
-      } else {
-        throw saveError
-      }
-    }
-
-    res.status(200).json({ message: "Cart synced successfully", items: cart.items })
-  } catch (error) {
-    console.error("❌ Cart sync error:", error)
-    res.status(500).json({ message: "Server error while syncing cart", error: error.message })
+    await userCart.save()
+    const populatedCart = await User.findById(req.user._id).populate("cart.items._id", "_id title images variants")
+    res.json({ message: "Cart synchronized successfully", cart: populatedCart.items })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: "Failed to synchronize cart", error: err.message })
   }
 })
 
-// Clear cart
-router.delete("/", userAuth, async (req, res) => {
-  try {
-    const userId = req.user.id
-    console.log(`🗑️ Clearing cart for user: ${userId}`)
-
-    await Cart.findOneAndDelete({ userId })
-    res.json({ message: "Cart cleared" })
-  } catch (error) {
-    console.error("❌ Cart clear error:", error)
-    res.status(500).json({ error: "Failed to clear cart" })
-  }
-})
-
-// Update item quantity
-router.patch("/update-quantity", userAuth, async (req, res) => {
-  try {
-    const { _id, variantId, quantity } = req.body
-    const userId = req.user.id
-
-    const cart = await Cart.findOne({ userId })
-    if (!cart) return res.status(404).json({ message: "Cart not found" })
-
-    const item = cart.items.find((i) => i._id.toString() === _id.toString() && i.variantId === variantId)
-
-    if (!item) return res.status(404).json({ message: "Item not found in cart" })
-
-    item.quantity = quantity
-    await cart.save()
-
-    res.json({ message: "Quantity updated", items: cart.items })
-  } catch (error) {
-    console.error("❌ Update quantity error:", error)
-    res.status(500).json({ error: "Failed to update quantity" })
-  }
-})
-
-// Remove item from cart
-router.delete("/item", userAuth, async (req, res) => {
-  try {
-    const { _id, variantId } = req.body
-    const userId = req.user.id
-
-    const cart = await Cart.findOne({ userId })
-    if (!cart) return res.status(404).json({ message: "Cart not found" })
-
-    cart.items = cart.items.filter((i) => !(i._id.toString() === _id.toString() && i.variantId === variantId))
-
-    await cart.save()
-    res.json({ message: "Item removed", items: cart.items })
-  } catch (error) {
-    console.error("❌ Remove item error:", error)
-    res.status(500).json({ error: "Failed to remove item" })
-  }
-})
-
-export default router
+module.exports = router
