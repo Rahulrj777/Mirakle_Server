@@ -8,10 +8,12 @@ const { generateVariantId } = require("../utils/cartUtils") // Import the new ut
 
 // Helper to get user cart and populate it
 async function getUserCart(userId) {
-  return await User.findById(userId).populate({
-    path: "cart.items._id",
-    select: "_id title images variants", // Select necessary fields for population
-  })
+  return await User.findById(userId)
+    .populate({
+      path: "cart.items._id",
+      select: "_id title images variants", // Select necessary fields for population
+    })
+    .lean() // Add .lean() to get plain JavaScript objects, which can sometimes help with comparison issues
 }
 
 router.post("/cart/add", requireLogin, async (req, res) => {
@@ -57,8 +59,9 @@ router.post("/cart/add", requireLogin, async (req, res) => {
     )
 
     const existingItem = userCart.cart.items.find(
-      // Access cart.items
-      (item) => item._id.toString() === productId && item.variantId === uniqueCartItemId,
+      (item) =>
+        String(item._id).trim() === String(productId).trim() &&
+        String(item.variantId).trim() === String(uniqueCartItemId).trim(),
     )
 
     if (existingItem) {
@@ -141,7 +144,9 @@ router.put("/cart/update-quantity", requireLogin, async (req, res) => {
 
     // ✅ CRITICAL FIX: Use variantId for finding item to update
     const itemToUpdate = userCart.cart.items.find(
-      (item) => item._id.toString() === productId && item.variantId === variantId,
+      (item) =>
+        String(item._id).trim() === String(productId).trim() &&
+        String(item.variantId).trim() === String(variantId).trim(),
     )
 
     if (!itemToUpdate) {
@@ -187,8 +192,11 @@ router.delete("/cart/remove-item", requireLogin, async (req, res) => {
 
     const initialLength = userCart.cart.items.length
     userCart.cart.items = userCart.cart.items.filter(
-      // Access cart.items
-      (item) => !(item._id.toString() === productId && item.variantId === variantId),
+      (item) =>
+        !(
+          String(item._id).trim() === String(productId).trim() &&
+          String(item.variantId).trim() === String(variantId).trim()
+        ),
     )
 
     if (userCart.cart.items.length === initialLength) {
@@ -286,7 +294,9 @@ router.post("/cart", requireLogin, async (req, res) => {
 
       // Check if this specific product-variant combination already exists in the *newly building* cart
       const existingAggregatedItem = userCart.cart.items.find(
-        (item) => item._id.toString() === clientItem._id && item.variantId === clientItem.variantId,
+        (item) =>
+          String(item._id).trim() === String(clientItem._id).trim() &&
+          String(item.variantId).trim() === String(clientItem.variantId).trim(),
       )
 
       if (existingAggregatedItem) {
