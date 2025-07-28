@@ -45,6 +45,10 @@ const streamUpload = (fileBuffer, folder) => {
 
                                           // commen
 
+  router.get('/validate-token', adminAuth, (req, res) => {
+    res.json({ valid: true, admin: req.user });
+  });
+
 router.get("/all-products", async (req, res) => {
   try {
     const { productType } = req.query
