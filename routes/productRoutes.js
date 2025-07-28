@@ -7,13 +7,13 @@ import Product from "../models/Product.js"
 import userAuth from "../middleware/userAuth.js"
 import cloudinary from "../utils/cloudinary.js"
 import streamifier from "streamifier"
-import adminAuth from "../middleware/adminAuth.js" // This should now work
+import adminAuth from "../middleware/adminAuth.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const router = express.Router()
-const reviewUploadDir = path.join(__dirname, "../uploads/reviews")
 
+const reviewUploadDir = path.join(__dirname, "../uploads/reviews")
 if (!fs.existsSync(reviewUploadDir)) fs.mkdirSync(reviewUploadDir, { recursive: true })
 
 const reviewStorage = multer.diskStorage({
@@ -46,6 +46,91 @@ const streamUpload = (fileBuffer, folder) => {
     streamifier.createReadStream(fileBuffer).pipe(stream)
   })
 }
+
+// ADD THIS NEW ROUTE FOR STOCK CHECKING
+router.post("/check-stock", userAuth, async (req, res) => {
+  try {
+    const { items } = req.body // Array of {productId, variantId}
+
+    console.log("🔍 Stock check request received for items:", items)
+
+    if (!items || !Array.isArray(items)) {
+      return res.status(400).json({ error: "Items array is required" })
+    }
+
+    const stockStatus = await Promise.all(
+      items.map(async (item) => {
+        try {
+          // Find the product by ID
+          const product = await Product.findById(item.productId)
+
+          if (!product) {
+            console.log(`❌ Product not found: ${item.productId}`)
+            return {
+              productId: item.productId,
+              variantId: item.variantId,
+              inStock: false,
+              availableQuantity: 0,
+            }
+          }
+
+          // Check if product is marked as out of stock globally
+          if (product.isOutOfStock) {
+            console.log(`❌ Product ${product.title} is marked as out of stock globally`)
+            return {
+              productId: item.productId,
+              variantId: item.variantId,
+              inStock: false,
+              availableQuantity: 0,
+            }
+          }
+
+          // Find the specific variant
+          const variant = product.variants?.find((v) => v._id.toString() === item.variantId)
+
+          if (!variant) {
+            console.log(`❌ Variant not found: ${item.variantId} for product: ${item.productId}`)
+            return {
+              productId: item.productId,
+              variantId: item.variantId,
+              inStock: false,
+              availableQuantity: 0,
+            }
+          }
+
+          // Check variant stock
+          const stockQuantity = variant.stock || 0
+          const isInStock = stockQuantity > 0
+
+          console.log(
+            `✅ Product: ${product.title}, Variant: ${variant.size}, Stock: ${stockQuantity}, InStock: ${isInStock}`,
+          )
+
+          return {
+            productId: item.productId,
+            variantId: item.variantId,
+            inStock: isInStock,
+            availableQuantity: stockQuantity,
+          }
+        } catch (error) {
+          console.error(`❌ Error checking stock for item ${item.productId}:`, error)
+          return {
+            productId: item.productId,
+            variantId: item.variantId,
+            inStock: false,
+            availableQuantity: 0,
+          }
+        }
+      }),
+    )
+
+    console.log("📊 Stock check results:", stockStatus)
+    res.json({ stockStatus })
+  } catch (error) {
+    console.error("❌ Stock check API error:", error)
+    res.status(500).json({ error: "Failed to check stock status" })
+  }
+})
 
 // Public routes (no auth needed)
 router.get("/all-products", async (req, res) => {
@@ -333,7 +418,6 @@ router.get("/", adminAuth, async (req, res) => {
   }
 })
 
-// This is the problematic route - let's add extra debugging
 router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (req, res) => {
   try {
     console.log("🔍 UPDATE ROUTE CALLED")
@@ -342,6 +426,7 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (r
     console.log("🔍 Request body keys:", Object.keys(req.body))
 
     const { name, variants, description, details, removedImages, keywords, productType } = req.body
+
     const product = await Product.findById(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
@@ -418,6 +503,7 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (r
         console.log(
           `Processing existing image: URL=${imgObj.url}, Public ID=${imgObj.public_id}. Is it in removed list? ${removedPublicIds.includes(imgObj.public_id)}`,
         )
+
         if (removedPublicIds.includes(imgObj.public_id)) {
           console.log(`Attempting to delete Cloudinary image with public_id: ${imgObj.public_id}`)
           try {
@@ -472,6 +558,7 @@ router.put("/toggle-stock/:id", adminAuth, async (req, res) => {
 router.delete("/delete/:id", adminAuth, async (req, res) => {
   try {
     const productId = req.params.id
+
     const product = await Product.findByIdAndDelete(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
