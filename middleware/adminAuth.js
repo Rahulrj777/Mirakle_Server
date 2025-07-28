@@ -4,17 +4,22 @@ import jwt from "jsonwebtoken"
 const adminAuth = (req, res, next) => {
   const token = req.headers["authorization"]?.split(" ")[1]
 
+  console.log("🔍 AdminAuth middleware called")
+  console.log("🔍 Token received:", token ? token.substring(0, 20) + "..." : "No token")
+
   if (!token) {
+    console.log("❌ No token provided")
     return res.status(403).json({ message: "No token provided" })
   }
 
   try {
     // Only verify with admin secret
     const decoded = jwt.verify(token, process.env.ADMIN_JWT_SECRET)
+    console.log("✅ Token decoded successfully:", { id: decoded.id, role: decoded.role })
     req.user = decoded
     next()
   } catch (err) {
-    console.error("Admin token verification failed:", err.message)
+    console.error("❌ Admin token verification failed:", err.message)
     return res.status(401).json({ message: "Invalid token" })
   }
 }

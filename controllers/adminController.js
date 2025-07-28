@@ -50,7 +50,7 @@ export const adminLogin = async (req, res) => {
 
     const token = generateToken(admin._id)
 
-    console.log("Admin login successful:", {
+    console.log("✅ Admin login successful:", {
       adminId: admin._id,
       tokenGenerated: !!token,
       tokenPreview: token.substring(0, 20) + "...",
@@ -62,7 +62,7 @@ export const adminLogin = async (req, res) => {
       admin: { id: admin._id, name: admin.name, email },
     })
   } catch (error) {
-    console.error("Admin login error:", error)
+    console.error("❌ Admin login error:", error)
     res.status(500).json({ message: "Server error", error: error.message })
   }
 }
@@ -111,12 +111,14 @@ export const resetPassword = async (req, res) => {
 export const validateToken = async (req, res) => {
   try {
     // If we reach here, the token is valid (middleware already verified it)
+    console.log("✅ Token validation successful for user:", req.user)
     res.json({
       message: "Token is valid",
       user: req.user,
       tokenExpiry: new Date(req.user.exp * 1000), // Convert to readable date
     })
   } catch (error) {
+    console.error("❌ Token validation error:", error)
     res.status(401).json({ message: "Invalid token" })
   }
 }
