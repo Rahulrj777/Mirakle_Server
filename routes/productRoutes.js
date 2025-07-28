@@ -3,18 +3,17 @@ import multer from "multer"
 import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
 import Product from "../models/Product.js"
 import userAuth from "../middleware/userAuth.js"
 import cloudinary from "../utils/cloudinary.js"
 import streamifier from "streamifier"
+import adminAuth from "../middleware/adminAuth.js";
 
 const router = express.Router()
-
 const reviewUploadDir = path.join(__dirname, "../uploads/reviews")
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 if (!fs.existsSync(reviewUploadDir)) fs.mkdirSync(reviewUploadDir, { recursive: true })
-
 const reviewStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, reviewUploadDir)
@@ -24,11 +23,8 @@ const reviewStorage = multer.diskStorage({
     cb(null, uniqueName)
   },
 })
-
 const uploadReview = multer({ storage: reviewStorage })
-
 const uploadProduct = multer({ storage: multer.memoryStorage() })
-
 const streamUpload = (fileBuffer, folder) => {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
@@ -46,6 +42,8 @@ const streamUpload = (fileBuffer, folder) => {
     streamifier.createReadStream(fileBuffer).pipe(stream)
   })
 }
+
+                                          // commen
 
 router.get("/all-products", async (req, res) => {
   try {
@@ -88,60 +86,6 @@ router.get("/related/:id", async (req, res) => {
   } catch (error) {
     console.error("Failed to fetch related products:", error)
     res.status(500).json({ message: "Server error" })
-  }
-})
-
-router.post("/upload-product", uploadProduct.array("images", 10), async (req, res) => {
-  try {
-    const { name, variants, description, details, keywords, productType } = req.body
-    console.log("🔍 Body:", req.body)
-    console.log("🖼 Files received for upload:", req.files?.length)
-
-    if (!name || !variants || !productType) {
-      return res.status(400).json({ message: "Product name, variants, and product type are required" })
-    }
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ message: "At least one image is required for the product" })
-    }
-
-    let parsedVariants, parsedDetails, parsedKeywords
-    try {
-      parsedVariants = JSON.parse(variants)
-      parsedDetails = details ? JSON.parse(details) : {}
-      parsedKeywords = keywords ? JSON.parse(keywords) : []
-    } catch (err) {
-      console.error("❌ JSON Parse Error:", err)
-      return res.status(400).json({ message: "Invalid JSON in variants, details, or keywords" })
-    }
-
-    const uploadedImages = []
-    for (const file of req.files) {
-      try {
-        const result = await streamUpload(file.buffer, "mirakle-products")
-        uploadedImages.push({ url: result.secure_url, public_id: result.public_id })
-      } catch (uploadErr) {
-        console.error("❌ Cloudinary upload error:", uploadErr)
-        return res.status(500).json({ message: "Failed to upload some images to Cloudinary", error: uploadErr.message })
-      }
-    }
-
-    const newProduct = new Product({
-      title: name,
-      variants: parsedVariants,
-      description: description || "",
-      details: parsedDetails,
-      keywords: parsedKeywords,
-      productType: productType,
-      images: {
-        others: uploadedImages,
-      },
-    })
-
-    await newProduct.save()
-    res.status(201).json(newProduct)
-  } catch (err) {
-    console.error("❌ Product upload error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
   }
 })
 
@@ -196,6 +140,36 @@ router.get("/search", async (req, res) => {
   } catch (error) {
     console.error("Search failed:", error)
     res.status(500).json({ error: "Search failed" })
+  }
+})
+
+                                        // userauth
+
+router.delete("/:id/review/:reviewId", userAuth, async (req, res) => {
+  try {
+    const { id: productId, reviewId } = req.params
+    const userId = req.user.id
+    const product = await Product.findById(productId)
+    if (!product) return res.status(404).json({ message: "Product not found" })
+    const reviewIndex = product.reviews.findIndex((r) => r._id.toString() === reviewId && r.user.toString() === userId)
+    if (reviewIndex === -1) {
+      return res.status(404).json({ message: "Review not found or unauthorized" })
+    }
+    const reviewToDelete = product.reviews[reviewIndex]
+    if (reviewToDelete.images && reviewToDelete.images.length > 0) {
+      reviewToDelete.images.forEach((imgPath) => {
+        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath)
+        }
+      })
+    }
+    product.reviews.splice(reviewIndex, 1)
+    await product.save()
+    res.json({ message: "Review deleted successfully" })
+  } catch (err) {
+    console.error("Delete review error:", err)
+    res.status(500).json({ message: "Server error", error: err.message })
   }
 })
 
@@ -264,7 +238,63 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
   }
 })
 
-router.post("/create", async (req, res) => {
+                                         // adminauth//
+
+router.post("/upload-product",adminAuth, uploadProduct.array("images", 10), async (req, res) => {
+  try {
+    const { name, variants, description, details, keywords, productType } = req.body
+    console.log("🔍 Body:", req.body)
+    console.log("🖼 Files received for upload:", req.files?.length)
+
+    if (!name || !variants || !productType) {
+      return res.status(400).json({ message: "Product name, variants, and product type are required" })
+    }
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: "At least one image is required for the product" })
+    }
+
+    let parsedVariants, parsedDetails, parsedKeywords
+    try {
+      parsedVariants = JSON.parse(variants)
+      parsedDetails = details ? JSON.parse(details) : {}
+      parsedKeywords = keywords ? JSON.parse(keywords) : []
+    } catch (err) {
+      console.error("❌ JSON Parse Error:", err)
+      return res.status(400).json({ message: "Invalid JSON in variants, details, or keywords" })
+    }
+
+    const uploadedImages = []
+    for (const file of req.files) {
+      try {
+        const result = await streamUpload(file.buffer, "mirakle-products")
+        uploadedImages.push({ url: result.secure_url, public_id: result.public_id })
+      } catch (uploadErr) {
+        console.error("❌ Cloudinary upload error:", uploadErr)
+        return res.status(500).json({ message: "Failed to upload some images to Cloudinary", error: uploadErr.message })
+      }
+    }
+
+    const newProduct = new Product({
+      title: name,
+      variants: parsedVariants,
+      description: description || "",
+      details: parsedDetails,
+      keywords: parsedKeywords,
+      productType: productType,
+      images: {
+        others: uploadedImages,
+      },
+    })
+
+    await newProduct.save()
+    res.status(201).json(newProduct)
+  } catch (err) {
+    console.error("❌ Product upload error:", err)
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+router.post("/create",adminAuth, async (req, res) => {
   try {
     const product = new Product(req.body)
     await product.save()
@@ -274,7 +304,7 @@ router.post("/create", async (req, res) => {
   }
 })
 
-router.get("/", async (req, res) => {
+router.get("/",adminAuth, async (req, res) => {
   try {
     const products = await Product.find()
     res.json(products)
@@ -283,35 +313,7 @@ router.get("/", async (req, res) => {
   }
 })
 
-router.delete("/:id/review/:reviewId", userAuth, async (req, res) => {
-  try {
-    const { id: productId, reviewId } = req.params
-    const userId = req.user.id
-    const product = await Product.findById(productId)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-    const reviewIndex = product.reviews.findIndex((r) => r._id.toString() === reviewId && r.user.toString() === userId)
-    if (reviewIndex === -1) {
-      return res.status(404).json({ message: "Review not found or unauthorized" })
-    }
-    const reviewToDelete = product.reviews[reviewIndex]
-    if (reviewToDelete.images && reviewToDelete.images.length > 0) {
-      reviewToDelete.images.forEach((imgPath) => {
-        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
-        if (fs.existsSync(fullPath)) {
-          fs.unlinkSync(fullPath)
-        }
-      })
-    }
-    product.reviews.splice(reviewIndex, 1)
-    await product.save()
-    res.json({ message: "Review deleted successfully" })
-  } catch (err) {
-    console.error("Delete review error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
-  }
-})
-
-router.put("/update/:id", userAuth, uploadProduct.array("images", 10), async (req, res) => {
+router.put("/update/:id",adminAuth, uploadProduct.array("images", 10), async (req, res) => {
   try {
     const { name, variants, description, details, removedImages, keywords, productType } = req.body
     const product = await Product.findById(req.params.id)
@@ -368,7 +370,6 @@ router.put("/update/:id", userAuth, uploadProduct.array("images", 10), async (re
       }
     }
 
-    // --- Start of enhanced logging for image removal ---
     console.log("--- Image Removal Process Start ---")
     console.log("Product images before removal attempt:", JSON.stringify(product.images.others, null, 2))
 
@@ -401,7 +402,6 @@ router.put("/update/:id", userAuth, uploadProduct.array("images", 10), async (re
             }
           } catch (cloudinaryErr) {
             console.error(`❌ Failed to delete image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
-            // Continue processing other images even if one fails, but log the error
           }
         } else {
           console.log(`Keeping image: ${imgObj.public_id}`)
@@ -411,18 +411,14 @@ router.put("/update/:id", userAuth, uploadProduct.array("images", 10), async (re
       product.images.others = imagesToKeep
       console.log("Product images array after filtering for removal:", JSON.stringify(product.images.others, null, 2))
     }
-    // --- End of enhanced logging for image removal ---
 
-    // Combine existing (kept) images with newly uploaded images
     product.images.others = [...product.images.others, ...newImages]
     console.log("Product images after adding new images:", JSON.stringify(product.images.others, null, 2))
 
-    // Ensure there's at least one image after update
     if (product.images.others.length === 0) {
       return res.status(400).json({ message: "Product must have at least one image." })
     }
 
-    // Mark the images.others array as modified to ensure Mongoose saves changes
     product.markModified("images.others")
 
     await product.save()
@@ -434,7 +430,7 @@ router.put("/update/:id", userAuth, uploadProduct.array("images", 10), async (re
   }
 })
 
-router.put("/toggle-stock/:id", async (req, res) => {
+router.put("/toggle-stock/:id",adminAuth, async (req, res) => {
   try {
     const { isOutOfStock } = req.body
     const updated = await Product.findByIdAndUpdate(req.params.id, { isOutOfStock }, { new: true })
@@ -444,7 +440,7 @@ router.put("/toggle-stock/:id", async (req, res) => {
   }
 })
 
-router.delete("/delete/:id", async (req, res) => {
+router.delete("/delete/:id",adminAuth, async (req, res) => {
   try {
     const productId = req.params.id
     const product = await Product.findByIdAndDelete(productId)
