@@ -1,7 +1,6 @@
 import express from "express"
 import mongoose from "mongoose"
 import dotenv from "dotenv"
-import cors from "cors"
 import path from "path"
 import { fileURLToPath } from "url"
 
@@ -21,38 +20,18 @@ import contactRoutes from "./routes/contact.js"
 
 const app = express()
 
-const allowedOrigins = [
-  "https://mirakle-website-m1xp.vercel.app",
-  "https://mirakle-client.vercel.app",
-  "https://mirakle-admin.vercel.app",
-  "http://localhost:3000", // Add for local development
-  "http://localhost:5173", // Add for Vite dev server
-]
+// Simple CORS configuration that allows all origins (for testing)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*")
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
 
-// Updated CORS configuration
-const corsOptions = {
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true)
-
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true)
-    } else {
-      console.log("CORS blocked origin:", origin)
-      callback(new Error("CORS not allowed for this origin: " + origin))
-    }
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-  optionsSuccessStatus: 200, // Some legacy browsers choke on 204
-}
-
-// Apply CORS middleware
-app.use(cors(corsOptions))
-
-// Handle preflight requests explicitly
-app.options("*", cors(corsOptions))
+  if (req.method === "OPTIONS") {
+    res.sendStatus(200)
+  } else {
+    next()
+  }
+})
 
 app.use(express.json({ limit: "10mb" }))
 app.use(express.urlencoded({ extended: true, limit: "10mb" }))

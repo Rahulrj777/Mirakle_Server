@@ -6,21 +6,20 @@ dotenv.config()
 
 const router = express.Router()
 
-// Add explicit CORS headers for this route
-router.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", req.headers.origin)
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-  res.header("Access-Control-Allow-Credentials", "true")
-
-  if (req.method === "OPTIONS") {
-    res.sendStatus(200)
-  } else {
-    next()
-  }
+// Handle preflight requests
+router.options("/", (req, res) => {
+  res.header("Access-Control-Allow-Origin", "*")
+  res.header("Access-Control-Allow-Methods", "POST, OPTIONS")
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+  res.sendStatus(200)
 })
 
 router.post("/", async (req, res) => {
+  // Set CORS headers for the actual request
+  res.header("Access-Control-Allow-Origin", "*")
+  res.header("Access-Control-Allow-Methods", "POST, OPTIONS")
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
   console.log("📧 Contact form submission received:", req.body)
 
   const { name, email, message } = req.body
@@ -42,16 +41,11 @@ router.post("/", async (req, res) => {
       },
     })
 
-    // Verify transporter configuration
-    await transporter.verify()
-    console.log("📧 Email transporter verified")
-
     const mailOptions = {
-      from: `"${name}" <${process.env.CONTACT_EMAIL}>`, // Use your email as sender
-      replyTo: email, // Set reply-to as the user's email
+      from: process.env.CONTACT_EMAIL,
       to: "rahulsrinivasannkl@gmail.com",
       subject: `New Contact Message from ${name}`,
-      text: message,
+      text: `Name: ${name}\nEmail: ${email}\nMessage: ${message}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #333;">New Contact Form Submission</h2>
@@ -67,18 +61,17 @@ router.post("/", async (req, res) => {
       `,
     }
 
-    const info = await transporter.sendMail(mailOptions)
-    console.log("📧 Email sent successfully:", info.messageId)
+    await transporter.sendMail(mailOptions)
+    console.log("📧 Email sent successfully")
 
     res.status(200).json({
       message: "Message sent successfully!",
-      messageId: info.messageId,
     })
   } catch (error) {
     console.error("📧 Email error:", error)
     res.status(500).json({
       error: "Failed to send email",
-      details: process.env.NODE_ENV === "development" ? error.message : undefined,
+      details: error.message,
     })
   }
 })
