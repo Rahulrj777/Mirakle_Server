@@ -15,48 +15,63 @@ import productRoutes from "./routes/productRoutes.js"
 import userRoutes from "./routes/userRoutes.js"
 import cartRoutes from "./routes/cartRoutes.js"
 import offerBannerRoutes from "./routes/offerBannerRoutes.js"
-import adminRoutes from "./routes/adminRoutes.js";
-import locationRoutes from './routes/locationRoutes.js';
-import contactRoutes from "./routes/contact.js";
+import adminRoutes from "./routes/adminRoutes.js"
+import locationRoutes from "./routes/locationRoutes.js"
+import contactRoutes from "./routes/contact.js"
 
 const app = express()
 
 const allowedOrigins = [
   "https://mirakle-website-m1xp.vercel.app",
   "https://mirakle-client.vercel.app",
-  "https://mirakle-admin.vercel.app"
+  "https://mirakle-admin.vercel.app",
+  "http://localhost:3000", // Add for local development
+  "http://localhost:5173", // Add for Vite dev server
 ]
 
+// Updated CORS configuration
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true)
+
+    if (allowedOrigins.includes(origin)) {
       callback(null, true)
     } else {
+      console.log("CORS blocked origin:", origin)
       callback(new Error("CORS not allowed for this origin: " + origin))
     }
   },
   credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  optionsSuccessStatus: 200, // Some legacy browsers choke on 204
 }
 
+// Apply CORS middleware
 app.use(cors(corsOptions))
+
+// Handle preflight requests explicitly
+app.options("*", cors(corsOptions))
+
 app.use(express.json({ limit: "10mb" }))
 app.use(express.urlencoded({ extended: true, limit: "10mb" }))
-
 app.use("/uploads", express.static(path.join(__dirname, "uploads")))
 
 app.use((req, res, next) => {
-  console.log("📥 Request received:", req.method, req.url)
+  console.log("📥 Request received:", req.method, req.url, "Origin:", req.headers.origin)
   next()
 })
 
+// Routes
 app.use("/api/products", productRoutes)
 app.use("/api/banners", bannerRoutes)
 app.use("/api/users", userRoutes)
 app.use("/api/cart", cartRoutes)
 app.use("/api/offer-banners", offerBannerRoutes)
-app.use("/api/admin", adminRoutes);
-app.use('/api/location', locationRoutes);
-app.use("/api/contact", contactRoutes);
+app.use("/api/admin", adminRoutes)
+app.use("/api/location", locationRoutes)
+app.use("/api/contact", contactRoutes)
 
 app.get("/", (req, res) => {
   res.send("Mirakle Server is Running")
