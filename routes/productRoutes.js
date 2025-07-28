@@ -7,13 +7,15 @@ import Product from "../models/Product.js"
 import userAuth from "../middleware/userAuth.js"
 import cloudinary from "../utils/cloudinary.js"
 import streamifier from "streamifier"
-import adminAuth from "../middleware/adminAuth.js";
+import adminAuth from "../middleware/adminAuth.js" // This should now work
 
-const router = express.Router()
-const reviewUploadDir = path.join(__dirname, "../uploads/reviews")
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+const router = express.Router()
+const reviewUploadDir = path.join(__dirname, "../uploads/reviews")
+
 if (!fs.existsSync(reviewUploadDir)) fs.mkdirSync(reviewUploadDir, { recursive: true })
+
 const reviewStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, reviewUploadDir)
@@ -23,8 +25,10 @@ const reviewStorage = multer.diskStorage({
     cb(null, uniqueName)
   },
 })
+
 const uploadReview = multer({ storage: reviewStorage })
 const uploadProduct = multer({ storage: multer.memoryStorage() })
+
 const streamUpload = (fileBuffer, folder) => {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
@@ -43,21 +47,14 @@ const streamUpload = (fileBuffer, folder) => {
   })
 }
 
-                                          // commen
-
-  router.get('/validate-token', adminAuth, (req, res) => {
-    res.json({ valid: true, admin: req.user });
-  });
-
+// Public routes (no auth needed)
 router.get("/all-products", async (req, res) => {
   try {
     const { productType } = req.query
     const filter = {}
-
     if (productType) {
       filter.productType = productType
     }
-
     const products = await Product.find(filter)
     res.json(products)
   } catch (err) {
@@ -70,11 +67,13 @@ router.get("/related/:id", async (req, res) => {
   try {
     const product = await Product.findById(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
+
     const keywords = product.keywords || []
     const related = await Product.find({
       _id: { $ne: product._id },
       keywords: { $in: keywords },
     }).limit(10)
+
     if (related.length < 4) {
       const additional = await Product.find({
         _id: { $ne: product._id },
@@ -86,6 +85,7 @@ router.get("/related/:id", async (req, res) => {
         }
       })
     }
+
     res.json(related.slice(0, 10))
   } catch (error) {
     console.error("Failed to fetch related products:", error)
@@ -140,6 +140,7 @@ router.get("/search", async (req, res) => {
       { $sort: { matchStrength: -1, createdAt: -1 } },
       { $limit: 10 },
     ])
+
     res.json(results)
   } catch (error) {
     console.error("Search failed:", error)
@@ -147,18 +148,21 @@ router.get("/search", async (req, res) => {
   }
 })
 
-                                        // userauth
-
+// User auth routes
 router.delete("/:id/review/:reviewId", userAuth, async (req, res) => {
   try {
     const { id: productId, reviewId } = req.params
     const userId = req.user.id
+
     const product = await Product.findById(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
+
     const reviewIndex = product.reviews.findIndex((r) => r._id.toString() === reviewId && r.user.toString() === userId)
+
     if (reviewIndex === -1) {
       return res.status(404).json({ message: "Review not found or unauthorized" })
     }
+
     const reviewToDelete = product.reviews[reviewIndex]
     if (reviewToDelete.images && reviewToDelete.images.length > 0) {
       reviewToDelete.images.forEach((imgPath) => {
@@ -168,8 +172,10 @@ router.delete("/:id/review/:reviewId", userAuth, async (req, res) => {
         }
       })
     }
+
     product.reviews.splice(reviewIndex, 1)
     await product.save()
+
     res.json({ message: "Review deleted successfully" })
   } catch (err) {
     console.error("Delete review error:", err)
@@ -181,6 +187,7 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
   try {
     const { rating, comment } = req.body
     const reviewImages = req.files?.map((file) => `/uploads/reviews/${file.filename}`) || []
+
     if (!rating || !comment) {
       reviewImages.forEach((imgPath) => {
         const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
@@ -188,6 +195,7 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
       })
       return res.status(400).json({ message: "Rating and comment are required" })
     }
+
     if (rating < 1 || rating > 5) {
       reviewImages.forEach((imgPath) => {
         const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
@@ -195,6 +203,7 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
       })
       return res.status(400).json({ message: "Rating must be between 1 and 5" })
     }
+
     const product = await Product.findById(req.params.id)
     if (!product) {
       reviewImages.forEach((imgPath) => {
@@ -203,12 +212,15 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
       })
       return res.status(404).json({ message: "Product not found" })
     }
+
     const existingReviewIndex = product.reviews.findIndex((r) => r.user.toString() === req.user.id)
+
     if (existingReviewIndex !== -1) {
       product.reviews[existingReviewIndex].images.forEach((imgPath) => {
         const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
         if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
       })
+
       product.reviews[existingReviewIndex].rating = Number(rating)
       product.reviews[existingReviewIndex].comment = comment.trim()
       product.reviews[existingReviewIndex].images = reviewImages
@@ -224,7 +236,9 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
       }
       product.reviews.push(newReview)
     }
+
     await product.save()
+
     const updatedProduct = await Product.findById(req.params.id)
     res.status(201).json({
       message: "Review submitted successfully",
@@ -242,17 +256,19 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
   }
 })
 
-                                         // adminauth//
-
-router.post("/upload-product",adminAuth, uploadProduct.array("images", 10), async (req, res) => {
+// Admin routes - using adminAuth middleware
+router.post("/upload-product", adminAuth, uploadProduct.array("images", 10), async (req, res) => {
   try {
     const { name, variants, description, details, keywords, productType } = req.body
+
+    console.log("🔍 Upload product request received")
     console.log("🔍 Body:", req.body)
     console.log("🖼 Files received for upload:", req.files?.length)
 
     if (!name || !variants || !productType) {
       return res.status(400).json({ message: "Product name, variants, and product type are required" })
     }
+
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ message: "At least one image is required for the product" })
     }
@@ -298,7 +314,7 @@ router.post("/upload-product",adminAuth, uploadProduct.array("images", 10), asyn
   }
 })
 
-router.post("/create",adminAuth, async (req, res) => {
+router.post("/create", adminAuth, async (req, res) => {
   try {
     const product = new Product(req.body)
     await product.save()
@@ -308,7 +324,7 @@ router.post("/create",adminAuth, async (req, res) => {
   }
 })
 
-router.get("/",adminAuth, async (req, res) => {
+router.get("/", adminAuth, async (req, res) => {
   try {
     const products = await Product.find()
     res.json(products)
@@ -317,8 +333,14 @@ router.get("/",adminAuth, async (req, res) => {
   }
 })
 
-router.put("/update/:id",adminAuth, uploadProduct.array("images", 10), async (req, res) => {
+// This is the problematic route - let's add extra debugging
+router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (req, res) => {
   try {
+    console.log("🔍 UPDATE ROUTE CALLED")
+    console.log("🔍 Product ID:", req.params.id)
+    console.log("🔍 User from middleware:", req.user)
+    console.log("🔍 Request body keys:", Object.keys(req.body))
+
     const { name, variants, description, details, removedImages, keywords, productType } = req.body
     const product = await Product.findById(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
@@ -412,6 +434,7 @@ router.put("/update/:id",adminAuth, uploadProduct.array("images", 10), async (re
           imagesToKeep.push(imgObj)
         }
       }
+
       product.images.others = imagesToKeep
       console.log("Product images array after filtering for removal:", JSON.stringify(product.images.others, null, 2))
     }
@@ -424,17 +447,19 @@ router.put("/update/:id",adminAuth, uploadProduct.array("images", 10), async (re
     }
 
     product.markModified("images.others")
-
     await product.save()
+
+    console.log("✅ Product updated successfully")
     console.log("Product saved successfully. Final images in DB:", JSON.stringify(product.images.others, null, 2))
+
     res.json({ message: "Product updated successfully", product })
   } catch (err) {
-    console.error("Update error:", err)
+    console.error("❌ Update error:", err)
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
 
-router.put("/toggle-stock/:id",adminAuth, async (req, res) => {
+router.put("/toggle-stock/:id", adminAuth, async (req, res) => {
   try {
     const { isOutOfStock } = req.body
     const updated = await Product.findByIdAndUpdate(req.params.id, { isOutOfStock }, { new: true })
@@ -444,7 +469,7 @@ router.put("/toggle-stock/:id",adminAuth, async (req, res) => {
   }
 })
 
-router.delete("/delete/:id",adminAuth, async (req, res) => {
+router.delete("/delete/:id", adminAuth, async (req, res) => {
   try {
     const productId = req.params.id
     const product = await Product.findByIdAndDelete(productId)

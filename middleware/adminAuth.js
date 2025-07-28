@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken"
 const adminAuth = (req, res, next) => {
   const token = req.headers["authorization"]?.split(" ")[1]
 
-  console.log("🔍 AdminAuth middleware called")
+  console.log("🔍 AdminAuth middleware called for:", req.method, req.path)
   console.log("🔍 Token received:", token ? token.substring(0, 20) + "..." : "No token")
 
   if (!token) {
@@ -20,6 +20,8 @@ const adminAuth = (req, res, next) => {
     next()
   } catch (err) {
     console.error("❌ Admin token verification failed:", err.message)
+    console.error("❌ Token that failed:", token.substring(0, 50) + "...")
+    console.error("❌ Using secret:", process.env.ADMIN_JWT_SECRET ? "Secret exists" : "No secret found")
     return res.status(401).json({ message: "Invalid token" })
   }
 }
