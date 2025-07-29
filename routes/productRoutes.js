@@ -47,6 +47,43 @@ const streamUpload = (fileBuffer, folder) => {
   })
 }
 
+router.post("/check-stock", async (req, res) => {
+  try {
+    const { productIds } = req.body
+
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      return res.status(400).json({ message: "Product IDs array is required" })
+    }
+
+    console.log("🔍 Checking stock for products:", productIds)
+
+    const products = await Product.find({
+      _id: { $in: productIds },
+    }).select("_id title variants isOutOfStock")
+
+    console.log(`✅ Found ${products.length} products for stock check`)
+
+    res.json({
+      products: products.map((product) => ({
+        _id: product._id,
+        title: product.title,
+        isOutOfStock: product.isOutOfStock,
+        variants: product.variants.map((variant) => ({
+          size: variant.size,
+          weight: variant.weight,
+          price: variant.price,
+          discountPercent: variant.discountPercent,
+          stock: variant.stock,
+          isOutOfStock: variant.isOutOfStock,
+        })),
+      })),
+    })
+  } catch (error) {
+    console.error("❌ Stock check error:", error)
+    res.status(500).json({ message: "Failed to check stock", error: error.message })
+  }
+})
+
 // Public routes (no auth needed)
 router.get("/all-products", async (req, res) => {
   try {
@@ -324,12 +361,12 @@ router.post("/create", adminAuth, async (req, res) => {
   }
 })
 
-router.get("/", adminAuth, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const products = await Product.find()
     res.json(products)
-  } catch (err) {
-    res.status(500).json({ message: err.message })
+  } catch (error) {
+    res.status(500).json({ message: error.message })
   }
 })
 

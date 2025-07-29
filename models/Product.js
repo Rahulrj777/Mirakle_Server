@@ -10,6 +10,7 @@ const variantSchema = new mongoose.Schema(
     price: { type: Number },
     discountPercent: { type: Number, default: 0 },
     stock: { type: Number, default: 0 },
+    isOutOfStock: { type: Boolean, default: false },
   },
   { _id: false },
 )
@@ -25,6 +26,7 @@ const reviewSchema = new mongoose.Schema({
 
 const productSchema = new mongoose.Schema(
   {
+    name: { type: String, required: true },
     title: { type: String, required: true },
     images: {
       others: [{ url: { type: String }, public_id: { type: String } }],
@@ -38,9 +40,17 @@ const productSchema = new mongoose.Schema(
     details: { type: Object, default: {} },
     keywords: [{ type: String }],
     reviews: [reviewSchema],
+    category: { type: String },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
   },
   { timestamps: true },
 )
+
+productSchema.pre("save", function (next) {
+  this.updatedAt = Date.now()
+  next()
+})
 
 const Product = mongoose.model("Product", productSchema)
 export default Product

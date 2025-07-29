@@ -23,6 +23,9 @@ const itemSchema = new mongoose.Schema(
     discountPercent: { type: Number, default: 0 },
     currentPrice: { type: Number, required: true, default: 0 },
     quantity: { type: Number, required: true, default: 1 },
+    stock: { type: mongoose.Schema.Types.Mixed }, // Add this
+    isOutOfStock: { type: Boolean, default: false }, // Add this
+    stockMessage: { type: String }, 
   },
   { _id: false },
 )
@@ -36,8 +39,13 @@ const CartSchema = new mongoose.Schema(
       unique: true,
     },
     items: [itemSchema],
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
   },
   { timestamps: true },
+  
 )
 
 export default mongoose.model("Cart", CartSchema)
+
+module.exports = Cart
