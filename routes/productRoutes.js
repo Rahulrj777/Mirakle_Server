@@ -84,6 +84,16 @@ router.post("/check-stock", async (req, res) => {
   }
 })
 
+// Get all products
+router.get("/", async (req, res) => {
+  try {
+    const products = await Product.find()
+    res.json(products)
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
 // Public routes (no auth needed)
 router.get("/all-products", async (req, res) => {
   try {
@@ -358,15 +368,6 @@ router.post("/create", adminAuth, async (req, res) => {
     res.status(201).json(product)
   } catch (err) {
     res.status(400).json({ message: err.message })
-  }
-})
-
-router.get("/", async (req, res) => {
-  try {
-    const products = await Product.find()
-    res.json(products)
-  } catch (error) {
-    res.status(500).json({ message: error.message })
   }
 })
 
