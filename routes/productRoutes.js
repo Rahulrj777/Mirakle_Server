@@ -12,8 +12,8 @@ import adminAuth from "../middleware/adminAuth.js"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const router = express.Router()
-const reviewUploadDir = path.join(__dirname, "../uploads/reviews")
 
+const reviewUploadDir = path.join(__dirname, "../uploads/reviews")
 if (!fs.existsSync(reviewUploadDir)) fs.mkdirSync(reviewUploadDir, { recursive: true })
 
 const reviewStorage = multer.diskStorage({
@@ -50,13 +50,11 @@ const streamUpload = (fileBuffer, folder) => {
 router.post("/check-stock", async (req, res) => {
   try {
     const { productIds } = req.body
-
     if (!Array.isArray(productIds) || productIds.length === 0) {
       return res.status(400).json({ message: "Product IDs array is required" })
     }
 
     console.log("🔍 Checking stock for products:", productIds)
-
     const products = await Product.find({
       _id: { $in: productIds },
     }).select("_id title variants isOutOfStock")
@@ -371,7 +369,6 @@ router.post("/create", adminAuth, async (req, res) => {
   }
 })
 
-// This is the problematic route - let's add extra debugging
 router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (req, res) => {
   try {
     console.log("🔍 UPDATE ROUTE CALLED")
@@ -380,6 +377,7 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (r
     console.log("🔍 Request body keys:", Object.keys(req.body))
 
     const { name, variants, description, details, removedImages, keywords, productType } = req.body
+
     const product = await Product.findById(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
@@ -507,10 +505,48 @@ router.put("/toggle-stock/:id", adminAuth, async (req, res) => {
   }
 })
 
+// New route to toggle individual variant stock
+router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
+  try {
+    const { variantIndex, isOutOfStock } = req.body
+    const productId = req.params.id
+
+    console.log("🔍 Toggle variant stock request:", { productId, variantIndex, isOutOfStock })
+
+    const product = await Product.findById(productId)
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" })
+    }
+
+    if (variantIndex < 0 || variantIndex >= product.variants.length) {
+      return res.status(400).json({ message: "Invalid variant index" })
+    }
+
+    // Update the specific variant's stock status
+    product.variants[variantIndex].isOutOfStock = isOutOfStock
+
+    // Mark the variants array as modified for Mongoose
+    product.markModified("variants")
+
+    await product.save()
+
+    console.log("✅ Variant stock updated successfully")
+    res.json({
+      message: "Variant stock updated successfully",
+      product,
+      updatedVariant: product.variants[variantIndex],
+    })
+  } catch (err) {
+    console.error("❌ Variant stock update error:", err)
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
 router.delete("/delete/:id", adminAuth, async (req, res) => {
   try {
     const productId = req.params.id
     const product = await Product.findByIdAndDelete(productId)
+
     if (!product) return res.status(404).json({ message: "Product not found" })
 
     if (product.images && product.images.others && product.images.others.length > 0) {
