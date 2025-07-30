@@ -302,7 +302,7 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
 })
 
 // Admin routes - using adminAuth middleware
-router.post("/upload-product", adminAuth, uploadProduct.array("images", 50), async (req, res) => {
+router.post("/upload-product", adminAuth, uploadProduct.array("images", 10), async (req, res) => {
   try {
     const { name, variants, description, details, keywords, productType } = req.body
 
@@ -328,40 +328,20 @@ router.post("/upload-product", adminAuth, uploadProduct.array("images", 50), asy
       return res.status(400).json({ message: "Invalid JSON in variants, details, or keywords" })
     }
 
-    // Process images - separate by variant or general
     const uploadedImages = []
-    const variantImages = {}
-
     for (const file of req.files) {
       try {
         const result = await streamUpload(file.buffer, "mirakle-products")
-        const imageData = { url: result.secure_url, public_id: result.public_id }
-
-        // Check if this image is for a specific variant (based on fieldname)
-        if (file.fieldname.startsWith("variant_")) {
-          const variantIndex = file.fieldname.split("_")[1]
-          if (!variantImages[variantIndex]) {
-            variantImages[variantIndex] = []
-          }
-          variantImages[variantIndex].push(imageData)
-        } else {
-          uploadedImages.push(imageData)
-        }
+        uploadedImages.push({ url: result.secure_url, public_id: result.public_id })
       } catch (uploadErr) {
         console.error("❌ Cloudinary upload error:", uploadErr)
         return res.status(500).json({ message: "Failed to upload some images to Cloudinary", error: uploadErr.message })
       }
     }
 
-    // Add variant-specific images to variants
-    const processedVariants = parsedVariants.map((variant, index) => ({
-      ...variant,
-      images: variantImages[index] || [],
-    }))
-
     const newProduct = new Product({
       title: name,
-      variants: processedVariants,
+      variants: parsedVariants,
       description: description || "",
       details: parsedDetails,
       keywords: parsedKeywords,
@@ -389,7 +369,7 @@ router.post("/create", adminAuth, async (req, res) => {
   }
 })
 
-router.put("/update/:id", adminAuth, uploadProduct.array("images", 50), async (req, res) => {
+router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (req, res) => {
   try {
     console.log("🔍 UPDATE ROUTE CALLED")
     console.log("🔍 Product ID:", req.params.id)
@@ -437,25 +417,12 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 50), async (r
       }
     }
 
-    // Process new images
     const newImages = []
-    const newVariantImages = {}
-
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
         try {
           const result = await streamUpload(file.buffer, "mirakle-products")
-          const imageData = { url: result.secure_url, public_id: result.public_id }
-
-          if (file.fieldname.startsWith("variant_")) {
-            const variantIndex = file.fieldname.split("_")[1]
-            if (!newVariantImages[variantIndex]) {
-              newVariantImages[variantIndex] = []
-            }
-            newVariantImages[variantIndex].push(imageData)
-          } else {
-            newImages.push(imageData)
-          }
+          newImages.push({ url: result.secure_url, public_id: result.public_id })
         } catch (uploadErr) {
           console.error("❌ Cloudinary upload error during update:", uploadErr)
           return res
@@ -465,51 +432,62 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 50), async (r
       }
     }
 
-    // Handle removed images
+    console.log("--- Image Removal Process Start ---")
+    console.log("Product images before removal attempt:", JSON.stringify(product.images.others, null, 2))
+
     if (removedImages) {
       let removedPublicIds
       try {
         removedPublicIds = JSON.parse(removedImages)
+        console.log("Server received public IDs to remove (parsed from client):", removedPublicIds)
         if (!Array.isArray(removedPublicIds)) {
+          console.error("❌ removedImages is not an array after parsing:", removedPublicIds)
           return res.status(400).json({ message: "Invalid removedImages format: expected an array." })
         }
       } catch (err) {
+        console.error("❌ Error parsing removedImages JSON:", err)
         return res.status(400).json({ message: "Invalid removedImages JSON" })
       }
 
       const imagesToKeep = []
       for (const imgObj of product.images.others) {
+        console.log(
+          `Processing existing image: URL=${imgObj.url}, Public ID=${imgObj.public_id}. Is it in removed list? ${removedPublicIds.includes(imgObj.public_id)}`,
+        )
         if (removedPublicIds.includes(imgObj.public_id)) {
+          console.log(`Attempting to delete Cloudinary image with public_id: ${imgObj.public_id}`)
           try {
-            await cloudinary.uploader.destroy(imgObj.public_id)
+            const destroyResult = await cloudinary.uploader.destroy(imgObj.public_id)
+            console.log(`Cloudinary deletion result for ${imgObj.public_id}:`, destroyResult)
+            if (destroyResult.result !== "ok") {
+              console.warn(`⚠️ Cloudinary deletion for ${imgObj.public_id} was not 'ok'. Result:`, destroyResult)
+            }
           } catch (cloudinaryErr) {
             console.error(`❌ Failed to delete image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
           }
         } else {
+          console.log(`Keeping image: ${imgObj.public_id}`)
           imagesToKeep.push(imgObj)
         }
       }
+
       product.images.others = imagesToKeep
+      console.log("Product images array after filtering for removal:", JSON.stringify(product.images.others, null, 2))
     }
 
-    // Update images
     product.images.others = [...product.images.others, ...newImages]
+    console.log("Product images after adding new images:", JSON.stringify(product.images.others, null, 2))
 
-    // Update variant images
-    product.variants = product.variants.map((variant, index) => ({
-      ...variant,
-      images: [...(variant.images || []), ...(newVariantImages[index] || [])],
-    }))
-
-    if (product.images.others.length === 0 && product.variants.every((v) => !v.images || v.images.length === 0)) {
+    if (product.images.others.length === 0) {
       return res.status(400).json({ message: "Product must have at least one image." })
     }
 
     product.markModified("images.others")
-    product.markModified("variants")
     await product.save()
 
     console.log("✅ Product updated successfully")
+    console.log("Product saved successfully. Final images in DB:", JSON.stringify(product.images.others, null, 2))
+
     res.json({ message: "Product updated successfully", product })
   } catch (err) {
     console.error("❌ Update error:", err)
@@ -527,7 +505,7 @@ router.put("/toggle-stock/:id", adminAuth, async (req, res) => {
   }
 })
 
-// CRITICAL: Add this route - it was missing!
+// CRITICAL: Add this missing route - this is what's causing your 404 error!
 router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
   try {
     const { variantIndex, isOutOfStock } = req.body
@@ -580,7 +558,6 @@ router.delete("/delete/:id", adminAuth, async (req, res) => {
 
     if (!product) return res.status(404).json({ message: "Product not found" })
 
-    // Delete main product images
     if (product.images && product.images.others && product.images.others.length > 0) {
       for (const imgObj of product.images.others) {
         if (imgObj.public_id) {
@@ -589,24 +566,6 @@ router.delete("/delete/:id", adminAuth, async (req, res) => {
             console.log(`🗑️ Cloudinary image deleted: ${imgObj.public_id}`)
           } catch (cloudinaryErr) {
             console.error(`❌ Failed to delete image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
-          }
-        }
-      }
-    }
-
-    // Delete variant images
-    if (product.variants) {
-      for (const variant of product.variants) {
-        if (variant.images && variant.images.length > 0) {
-          for (const imgObj of variant.images) {
-            if (imgObj.public_id) {
-              try {
-                await cloudinary.uploader.destroy(imgObj.public_id)
-                console.log(`🗑️ Variant image deleted: ${imgObj.public_id}`)
-              } catch (cloudinaryErr) {
-                console.error(`❌ Failed to delete variant image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
-              }
-            }
           }
         }
       }
