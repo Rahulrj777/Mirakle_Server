@@ -302,20 +302,29 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
 })
 
 // Admin routes - using adminAuth middleware
-router.post("/upload-product", adminAuth, uploadProduct.array("images", 10), async (req, res) => {
+router.post("/upload-product", adminAuth, uploadProduct.array("images", 50), async (req, res) => {
   try {
     const { name, variants, description, details, keywords, productType } = req.body
 
     console.log("🔍 Upload product request received")
-    console.log("🔍 Body:", req.body)
-    console.log("🖼 Files received for upload:", req.files?.length)
+    console.log("🔍 Request body:", {
+      name,
+      productType,
+      variantsLength: variants ? JSON.parse(variants).length : 0,
+      filesCount: req.files?.length || 0,
+    })
+    console.log(
+      "🖼 Files received:",
+      req.files?.map((f) => ({
+        fieldname: f.fieldname,
+        originalname: f.originalname,
+        size: f.size,
+      })),
+    )
 
     if (!name || !variants || !productType) {
+      console.error("❌ Missing required fields:", { name: !!name, variants: !!variants, productType: !!productType })
       return res.status(400).json({ message: "Product name, variants, and product type are required" })
-    }
-
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ message: "At least one image is required for the product" })
     }
 
     let parsedVariants, parsedDetails, parsedKeywords
@@ -323,25 +332,74 @@ router.post("/upload-product", adminAuth, uploadProduct.array("images", 10), asy
       parsedVariants = JSON.parse(variants)
       parsedDetails = details ? JSON.parse(details) : {}
       parsedKeywords = keywords ? JSON.parse(keywords) : []
+      console.log("✅ JSON parsing successful")
     } catch (err) {
       console.error("❌ JSON Parse Error:", err)
       return res.status(400).json({ message: "Invalid JSON in variants, details, or keywords" })
     }
 
+    // Process images - separate by variant or general
     const uploadedImages = []
-    for (const file of req.files) {
-      try {
-        const result = await streamUpload(file.buffer, "mirakle-products")
-        uploadedImages.push({ url: result.secure_url, public_id: result.public_id })
-      } catch (uploadErr) {
-        console.error("❌ Cloudinary upload error:", uploadErr)
-        return res.status(500).json({ message: "Failed to upload some images to Cloudinary", error: uploadErr.message })
+    const variantImages = {}
+
+    if (req.files && req.files.length > 0) {
+      console.log("🔄 Processing images...")
+      for (const file of req.files) {
+        try {
+          console.log(`📤 Uploading ${file.fieldname}: ${file.originalname}`)
+          const result = await streamUpload(file.buffer, "mirakle-products")
+          const imageData = { url: result.secure_url, public_id: result.public_id }
+
+          // Check if this image is for a specific variant (based on fieldname)
+          if (file.fieldname.startsWith("variant_")) {
+            const variantIndex = file.fieldname.split("_")[1]
+            if (!variantImages[variantIndex]) {
+              variantImages[variantIndex] = []
+            }
+            variantImages[variantIndex].push(imageData)
+            console.log(`✅ Variant ${variantIndex} image uploaded:`, imageData.url)
+          } else {
+            uploadedImages.push(imageData)
+            console.log("✅ Main product image uploaded:", imageData.url)
+          }
+        } catch (uploadErr) {
+          console.error("❌ Cloudinary upload error:", uploadErr)
+          return res.status(500).json({
+            message: "Failed to upload some images to Cloudinary",
+            error: uploadErr.message,
+            file: file.originalname,
+          })
+        }
       }
+    }
+
+    // Add variant-specific images to variants
+    const processedVariants = parsedVariants.map((variant, index) => ({
+      ...variant,
+      images: variantImages[index] || [],
+    }))
+
+    console.log(
+      "🔄 Creating product with processed variants:",
+      processedVariants.map((v, i) => ({
+        index: i,
+        size: v.size,
+        imagesCount: v.images?.length || 0,
+      })),
+    )
+
+    // Check if we have at least one image (either main or variant)
+    const hasMainImages = uploadedImages.length > 0
+    const hasVariantImages = Object.keys(variantImages).length > 0
+
+    if (!hasMainImages && !hasVariantImages) {
+      console.error("❌ No images provided")
+      return res.status(400).json({ message: "At least one image is required for the product or its variants" })
     }
 
     const newProduct = new Product({
       title: name,
-      variants: parsedVariants,
+      variants: processedVariants,
       description: description || "",
       details: parsedDetails,
       keywords: parsedKeywords,
@@ -351,11 +409,19 @@ router.post("/upload-product", adminAuth, uploadProduct.array("images", 10), asy
       },
     })
 
+    console.log("💾 Saving product to database...")
     await newProduct.save()
+    console.log("✅ Product saved successfully with ID:", newProduct._id)
+
     res.status(201).json(newProduct)
   } catch (err) {
     console.error("❌ Product upload error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
+    console.error("❌ Error stack:", err.stack)
+    res.status(500).json({
+      message: "Server error",
+      error: err.message,
+      details: process.env.NODE_ENV === "development" ? err.stack : undefined,
+    })
   }
 })
 
@@ -369,12 +435,12 @@ router.post("/create", adminAuth, async (req, res) => {
   }
 })
 
-router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (req, res) => {
+router.put("/update/:id", adminAuth, uploadProduct.array("images", 50), async (req, res) => {
   try {
     console.log("🔍 UPDATE ROUTE CALLED")
     console.log("🔍 Product ID:", req.params.id)
-    console.log("🔍 User from middleware:", req.user)
     console.log("🔍 Request body keys:", Object.keys(req.body))
+    console.log("🔍 Files received:", req.files?.length || 0)
 
     const { name, variants, description, details, removedImages, keywords, productType } = req.body
 
@@ -411,83 +477,100 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (r
         if (!Array.isArray(parsedVariants) || parsedVariants.length === 0) {
           return res.status(400).json({ message: "At least one variant is required" })
         }
-        product.variants = parsedVariants
+
+        // Process new images for variants
+        const variantImages = {}
+        if (req.files && req.files.length > 0) {
+          for (const file of req.files) {
+            if (file.fieldname.startsWith("variant_")) {
+              const variantIndex = file.fieldname.split("_")[1]
+              if (!variantImages[variantIndex]) {
+                variantImages[variantIndex] = []
+              }
+              try {
+                const result = await streamUpload(file.buffer, "mirakle-products")
+                variantImages[variantIndex].push({ url: result.secure_url, public_id: result.public_id })
+                console.log(`✅ Variant ${variantIndex} image uploaded during update`)
+              } catch (uploadErr) {
+                console.error("❌ Variant image upload error:", uploadErr)
+                return res.status(500).json({ message: "Failed to upload variant images" })
+              }
+            }
+          }
+        }
+
+        // Merge existing variant images with new ones
+        const processedVariants = parsedVariants.map((variant, index) => {
+          const existingVariant = product.variants[index] || {}
+          const existingImages = existingVariant.images || []
+          const newImages = variantImages[index] || []
+
+          return {
+            ...variant,
+            images: [...existingImages, ...newImages],
+          }
+        })
+
+        product.variants = processedVariants
       } catch (err) {
+        console.error("❌ Variants processing error:", err)
         return res.status(400).json({ message: "Invalid variants JSON" })
       }
     }
 
+    // Handle main product images (existing logic)
     const newImages = []
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
-        try {
-          const result = await streamUpload(file.buffer, "mirakle-products")
-          newImages.push({ url: result.secure_url, public_id: result.public_id })
-        } catch (uploadErr) {
-          console.error("❌ Cloudinary upload error during update:", uploadErr)
-          return res
-            .status(500)
-            .json({ message: "Failed to upload new images to Cloudinary", error: uploadErr.message })
+        if (!file.fieldname.startsWith("variant_")) {
+          try {
+            const result = await streamUpload(file.buffer, "mirakle-products")
+            newImages.push({ url: result.secure_url, public_id: result.public_id })
+          } catch (uploadErr) {
+            console.error("❌ Main image upload error:", uploadErr)
+            return res.status(500).json({ message: "Failed to upload main images" })
+          }
         }
       }
     }
 
-    console.log("--- Image Removal Process Start ---")
-    console.log("Product images before removal attempt:", JSON.stringify(product.images.others, null, 2))
-
+    // Handle removed images
     if (removedImages) {
       let removedPublicIds
       try {
         removedPublicIds = JSON.parse(removedImages)
-        console.log("Server received public IDs to remove (parsed from client):", removedPublicIds)
-        if (!Array.isArray(removedPublicIds)) {
-          console.error("❌ removedImages is not an array after parsing:", removedPublicIds)
-          return res.status(400).json({ message: "Invalid removedImages format: expected an array." })
+        if (Array.isArray(removedPublicIds)) {
+          const imagesToKeep = []
+          for (const imgObj of product.images.others) {
+            if (removedPublicIds.includes(imgObj.public_id)) {
+              try {
+                await cloudinary.uploader.destroy(imgObj.public_id)
+                console.log(`🗑️ Deleted image: ${imgObj.public_id}`)
+              } catch (cloudinaryErr) {
+                console.error(`❌ Failed to delete image ${imgObj.public_id}:`, cloudinaryErr)
+              }
+            } else {
+              imagesToKeep.push(imgObj)
+            }
+          }
+          product.images.others = imagesToKeep
         }
       } catch (err) {
-        console.error("❌ Error parsing removedImages JSON:", err)
-        return res.status(400).json({ message: "Invalid removedImages JSON" })
+        console.error("❌ Error processing removed images:", err)
       }
-
-      const imagesToKeep = []
-      for (const imgObj of product.images.others) {
-        console.log(
-          `Processing existing image: URL=${imgObj.url}, Public ID=${imgObj.public_id}. Is it in removed list? ${removedPublicIds.includes(imgObj.public_id)}`,
-        )
-        if (removedPublicIds.includes(imgObj.public_id)) {
-          console.log(`Attempting to delete Cloudinary image with public_id: ${imgObj.public_id}`)
-          try {
-            const destroyResult = await cloudinary.uploader.destroy(imgObj.public_id)
-            console.log(`Cloudinary deletion result for ${imgObj.public_id}:`, destroyResult)
-            if (destroyResult.result !== "ok") {
-              console.warn(`⚠️ Cloudinary deletion for ${imgObj.public_id} was not 'ok'. Result:`, destroyResult)
-            }
-          } catch (cloudinaryErr) {
-            console.error(`❌ Failed to delete image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
-          }
-        } else {
-          console.log(`Keeping image: ${imgObj.public_id}`)
-          imagesToKeep.push(imgObj)
-        }
-      }
-
-      product.images.others = imagesToKeep
-      console.log("Product images array after filtering for removal:", JSON.stringify(product.images.others, null, 2))
     }
 
     product.images.others = [...product.images.others, ...newImages]
-    console.log("Product images after adding new images:", JSON.stringify(product.images.others, null, 2))
 
-    if (product.images.others.length === 0) {
+    if (product.images.others.length === 0 && !product.variants.some((v) => v.images && v.images.length > 0)) {
       return res.status(400).json({ message: "Product must have at least one image." })
     }
 
     product.markModified("images.others")
+    product.markModified("variants")
     await product.save()
 
     console.log("✅ Product updated successfully")
-    console.log("Product saved successfully. Final images in DB:", JSON.stringify(product.images.others, null, 2))
-
     res.json({ message: "Product updated successfully", product })
   } catch (err) {
     console.error("❌ Update error:", err)
