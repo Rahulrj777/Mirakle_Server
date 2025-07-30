@@ -546,30 +546,28 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
       return res.status(400).json({ message: "isOutOfStock must be boolean" })
     }
 
-    // Find product
+    // Find product by id
     const product = await Product.findById(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
-    // Check if variantIndex valid
     if (!product.variants || variantIndex >= product.variants.length) {
       return res.status(400).json({ message: "Variant index out of range" })
     }
 
-    // Update the specific variant's isOutOfStock field
+    // Update variant stock status
     product.variants[variantIndex].isOutOfStock = isOutOfStock
 
-    // Mark changes and save
     product.markModified("variants")
     await product.save()
 
     res.json({
-      message: "Variant stock status updated successfully",
+      message: "Variant stock updated successfully",
       product,
       updatedVariant: product.variants[variantIndex],
     })
-  } catch (err) {
-    console.error("Variant stock update error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
+  } catch (error) {
+    console.error("Variant stock update error:", error)
+    res.status(500).json({ message: "Server error", error: error.message })
   }
 })
 
