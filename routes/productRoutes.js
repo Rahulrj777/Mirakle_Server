@@ -533,37 +533,33 @@ router.delete("/delete/:id", adminAuth, async (req, res) => {
   }
 })
 
-// Add this route inside your existing router
-
 router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
   try {
     const productId = req.params.id
     const { variantIndex, isOutOfStock } = req.body
 
-    // Validate variantIndex
+    // Validate input
     if (typeof variantIndex !== "number" || variantIndex < 0) {
       return res.status(400).json({ message: "Invalid variant index" })
     }
-
-    // Validate isOutOfStock as boolean
     if (typeof isOutOfStock !== "boolean") {
       return res.status(400).json({ message: "isOutOfStock must be boolean" })
     }
 
+    // Find product
     const product = await Product.findById(productId)
-    if (!product) {
-      return res.status(404).json({ message: "Product not found" })
-    }
+    if (!product) return res.status(404).json({ message: "Product not found" })
 
+    // Check if variantIndex valid
     if (!product.variants || variantIndex >= product.variants.length) {
       return res.status(400).json({ message: "Variant index out of range" })
     }
 
-    // Update variant
+    // Update the specific variant's isOutOfStock field
     product.variants[variantIndex].isOutOfStock = isOutOfStock
 
+    // Mark changes and save
     product.markModified("variants")
-
     await product.save()
 
     res.json({
@@ -572,7 +568,7 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
       updatedVariant: product.variants[variantIndex],
     })
   } catch (err) {
-    console.error("Variant stock toggle error:", err)
+    console.error("Variant stock update error:", err)
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
