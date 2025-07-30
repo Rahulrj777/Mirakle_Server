@@ -505,7 +505,7 @@ router.put("/toggle-stock/:id", adminAuth, async (req, res) => {
   }
 })
 
-// New route to toggle individual variant stock
+// FIXED: New route to toggle individual variant stock
 router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
   try {
     const { variantIndex, isOutOfStock } = req.body
@@ -513,13 +513,22 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
 
     console.log("🔍 Toggle variant stock request:", { productId, variantIndex, isOutOfStock })
 
+    // Validate input
+    if (typeof variantIndex !== "number" || variantIndex < 0) {
+      return res.status(400).json({ message: "Invalid variant index" })
+    }
+
+    if (typeof isOutOfStock !== "boolean") {
+      return res.status(400).json({ message: "isOutOfStock must be a boolean" })
+    }
+
     const product = await Product.findById(productId)
     if (!product) {
       return res.status(404).json({ message: "Product not found" })
     }
 
-    if (variantIndex < 0 || variantIndex >= product.variants.length) {
-      return res.status(400).json({ message: "Invalid variant index" })
+    if (variantIndex >= product.variants.length) {
+      return res.status(400).json({ message: "Variant index out of range" })
     }
 
     // Update the specific variant's stock status
