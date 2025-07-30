@@ -22,7 +22,6 @@ import contactRoutes from "./routes/contact.js";
 const app = express()
 
 const allowedOrigins = [
-  "https://mirakle-website-m1xp.vercel.app",
   "https://mirakle-client.vercel.app",
   "https://mirakle-admin.vercel.app",
 ]
