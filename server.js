@@ -66,5 +66,10 @@ mongoose
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error("MongoDB connection error:", err))
 
+  app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err.stack || err)
+    res.status(500).json({ message: 'Internal Server Error', error: err.message })
+  })
+
 const PORT = process.env.PORT || 7000
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`))
