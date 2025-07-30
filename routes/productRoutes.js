@@ -5,14 +5,15 @@ import path from "path"
 import { fileURLToPath } from "url"
 import Product from "../models/Product.js"
 import userAuth from "../middleware/userAuth.js"
+import adminAuth from "../middleware/adminAuth.js"
 import cloudinary from "../utils/cloudinary.js"
 import streamifier from "streamifier"
-import adminAuth from "../middleware/adminAuth.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const router = express.Router()
 
+// Multer setup for reviews (disk storage)
 const reviewUploadDir = path.join(__dirname, "../uploads/reviews")
 if (!fs.existsSync(reviewUploadDir)) fs.mkdirSync(reviewUploadDir, { recursive: true })
 
@@ -27,26 +28,39 @@ const reviewStorage = multer.diskStorage({
 })
 
 const uploadReview = multer({ storage: reviewStorage })
-const uploadProduct = multer({ storage: multer.memoryStorage() })
 
-const streamUpload = (fileBuffer, folder) => {
-  return new Promise((resolve, reject) => {
+// Multer in-memory storage for product images
+const uploadProduct = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true)
+    } else {
+      cb(new Error("Only image files are allowed"), false)
+    }
+  },
+})
+
+// Helper: Upload buffer to Cloudinary
+const streamUpload = (fileBuffer, folder) =>
+  new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
-        folder: folder,
+        folder,
+        transformation: [{ width: 800, height: 800, crop: "limit", quality: "auto:good" }],
       },
       (error, result) => {
-        if (result) {
-          resolve(result)
-        } else {
-          reject(error)
-        }
-      },
+        if (result) resolve(result)
+        else reject(error)
+      }
     )
     streamifier.createReadStream(fileBuffer).pipe(stream)
   })
-}
 
+// --- Routes ---
+
+// --- Stock check ---
 router.post("/check-stock", async (req, res) => {
   try {
     const { productIds } = req.body
@@ -54,12 +68,9 @@ router.post("/check-stock", async (req, res) => {
       return res.status(400).json({ message: "Product IDs array is required" })
     }
 
-    console.log("🔍 Checking stock for products:", productIds)
-    const products = await Product.find({
-      _id: { $in: productIds },
-    }).select("_id title variants isOutOfStock")
-
-    console.log(`✅ Found ${products.length} products for stock check`)
+    const products = await Product.find({ _id: { $in: productIds } }).select(
+      "_id title variants isOutOfStock"
+    )
 
     res.json({
       products: products.map((product) => ({
@@ -82,7 +93,7 @@ router.post("/check-stock", async (req, res) => {
   }
 })
 
-// Get all products
+// --- Get all products ---
 router.get("/", async (req, res) => {
   try {
     const products = await Product.find()
@@ -92,52 +103,39 @@ router.get("/", async (req, res) => {
   }
 })
 
-// Public routes (no auth needed)
+// --- Public all products with optional filtering ---
 router.get("/all-products", async (req, res) => {
   try {
     const { productType } = req.query
     const filter = {}
-    if (productType) {
-      filter.productType = productType
-    }
-    const products = await Product.find(filter)
+    if (productType) filter.productType = productType
+    const products = await Product.find(filter).sort({ createdAt: -1 })
     res.json(products)
   } catch (err) {
-    console.error("Error fetching products:", err)
+    console.error("❌ Fetch products error:", err)
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
 
+// --- Related products ---
 router.get("/related/:id", async (req, res) => {
   try {
     const product = await Product.findById(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
-    const keywords = product.keywords || []
     const related = await Product.find({
       _id: { $ne: product._id },
-      keywords: { $in: keywords },
+      productType: product.productType,
     }).limit(10)
 
-    if (related.length < 4) {
-      const additional = await Product.find({
-        _id: { $ne: product._id },
-      }).limit(10)
-      const existingIds = new Set(related.map((p) => p._id.toString()))
-      additional.forEach((p) => {
-        if (!existingIds.has(p._id.toString())) {
-          related.push(p)
-        }
-      })
-    }
-
-    res.json(related.slice(0, 10))
+    res.json(related)
   } catch (error) {
-    console.error("Failed to fetch related products:", error)
-    res.status(500).json({ message: "Server error" })
+    console.error("❌ Fetch related products error:", error)
+    res.status(500).json({ message: "Failed to fetch related products" })
   }
 })
 
+// --- Search products ---
 router.get("/search", async (req, res) => {
   const query = req.query.query || ""
   try {
@@ -193,40 +191,7 @@ router.get("/search", async (req, res) => {
   }
 })
 
-// User auth routes
-router.delete("/:id/review/:reviewId", userAuth, async (req, res) => {
-  try {
-    const { id: productId, reviewId } = req.params
-    const userId = req.user.id
-
-    const product = await Product.findById(productId)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-
-    const reviewIndex = product.reviews.findIndex((r) => r._id.toString() === reviewId && r.user.toString() === userId)
-
-    if (reviewIndex === -1) {
-      return res.status(404).json({ message: "Review not found or unauthorized" })
-    }
-
-    const reviewToDelete = product.reviews[reviewIndex]
-    if (reviewToDelete.images && reviewToDelete.images.length > 0) {
-      reviewToDelete.images.forEach((imgPath) => {
-        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
-        if (fs.existsSync(fullPath)) {
-          fs.unlinkSync(fullPath)
-        }
-      })
-    }
-
-    product.reviews.splice(reviewIndex, 1)
-    await product.save()
-
-    res.json({ message: "Review deleted successfully" })
-  } catch (err) {
-    console.error("Delete review error:", err)
-    res.status(500).json({ message: "Server error", error: err.message })
-  }
-})
+// --- Reviews ---
 
 router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req, res) => {
   try {
@@ -234,6 +199,7 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
     const reviewImages = req.files?.map((file) => `/uploads/reviews/${file.filename}`) || []
 
     if (!rating || !comment) {
+      // Cleanup uploaded images on error
       reviewImages.forEach((imgPath) => {
         const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
         if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
@@ -261,6 +227,7 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
     const existingReviewIndex = product.reviews.findIndex((r) => r.user.toString() === req.user.id)
 
     if (existingReviewIndex !== -1) {
+      // Delete old review images
       product.reviews[existingReviewIndex].images.forEach((imgPath) => {
         const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
         if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
@@ -271,26 +238,25 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
       product.reviews[existingReviewIndex].images = reviewImages
       product.reviews[existingReviewIndex].createdAt = new Date()
     } else {
-      const newReview = {
+      product.reviews.push({
         user: req.user.id,
         name: req.user.name || "User",
         rating: Number(rating),
         comment: comment.trim(),
         images: reviewImages,
         createdAt: new Date(),
-      }
-      product.reviews.push(newReview)
+      })
     }
 
     await product.save()
-
     const updatedProduct = await Product.findById(req.params.id)
     res.status(201).json({
       message: "Review submitted successfully",
-      reviews: updatedProduct?.reviews,
+      reviews: updatedProduct.reviews,
     })
   } catch (err) {
     console.error("Review submission error:", err)
+    // Cleanup uploaded files on error
     if (req.files) {
       req.files.forEach((file) => {
         const fullPath = path.join(reviewUploadDir, file.filename)
@@ -301,30 +267,49 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
   }
 })
 
-// Admin routes - using adminAuth middleware
+router.delete("/:id/review/:reviewId", userAuth, async (req, res) => {
+  try {
+    const { id: productId, reviewId } = req.params
+    const userId = req.user.id
+
+    const product = await Product.findById(productId)
+    if (!product) return res.status(404).json({ message: "Product not found" })
+
+    const reviewIndex = product.reviews.findIndex(
+      (r) => r._id.toString() === reviewId && r.user.toString() === userId
+    )
+    if (reviewIndex === -1)
+      return res.status(404).json({ message: "Review not found or unauthorized" })
+
+    const reviewToDelete = product.reviews[reviewIndex]
+    if (reviewToDelete.images && reviewToDelete.images.length > 0) {
+      reviewToDelete.images.forEach((imgPath) => {
+        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+      })
+    }
+
+    product.reviews.splice(reviewIndex, 1)
+    await product.save()
+
+    res.json({ message: "Review deleted successfully" })
+  } catch (err) {
+    console.error("Delete review error:", err)
+    res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+// --- Admin Routes ---
+
+// Upload/Create product
 router.post("/upload-product", adminAuth, uploadProduct.array("images", 50), async (req, res) => {
   try {
     const { name, variants, description, details, keywords, productType } = req.body
 
-    console.log("🔍 Upload product request received")
-    console.log("🔍 Request body:", {
-      name,
-      productType,
-      variantsLength: variants ? JSON.parse(variants).length : 0,
-      filesCount: req.files?.length || 0,
-    })
-    console.log(
-      "🖼 Files received:",
-      req.files?.map((f) => ({
-        fieldname: f.fieldname,
-        originalname: f.originalname,
-        size: f.size,
-      })),
-    )
-
     if (!name || !variants || !productType) {
-      console.error("❌ Missing required fields:", { name: !!name, variants: !!variants, productType: !!productType })
-      return res.status(400).json({ message: "Product name, variants, and product type are required" })
+      return res
+        .status(400)
+        .json({ message: "Product name, variants, and product type are required" })
     }
 
     let parsedVariants, parsedDetails, parsedKeywords
@@ -332,38 +317,27 @@ router.post("/upload-product", adminAuth, uploadProduct.array("images", 50), asy
       parsedVariants = JSON.parse(variants)
       parsedDetails = details ? JSON.parse(details) : {}
       parsedKeywords = keywords ? JSON.parse(keywords) : []
-      console.log("✅ JSON parsing successful")
     } catch (err) {
-      console.error("❌ JSON Parse Error:", err)
       return res.status(400).json({ message: "Invalid JSON in variants, details, or keywords" })
     }
 
-    // Process images - separate by variant or general
     const uploadedImages = []
     const variantImages = {}
 
     if (req.files && req.files.length > 0) {
-      console.log("🔄 Processing images...")
       for (const file of req.files) {
         try {
-          console.log(`📤 Uploading ${file.fieldname}: ${file.originalname}`)
           const result = await streamUpload(file.buffer, "mirakle-products")
           const imageData = { url: result.secure_url, public_id: result.public_id }
 
-          // Check if this image is for a specific variant (based on fieldname)
           if (file.fieldname.startsWith("variant_")) {
-            const variantIndex = file.fieldname.split("_")[1]
-            if (!variantImages[variantIndex]) {
-              variantImages[variantIndex] = []
-            }
+            const variantIndex = parseInt(file.fieldname.split("_")[1])
+            if (!variantImages[variantIndex]) variantImages[variantIndex] = []
             variantImages[variantIndex].push(imageData)
-            console.log(`✅ Variant ${variantIndex} image uploaded:`, imageData.url)
           } else {
             uploadedImages.push(imageData)
-            console.log("✅ Main product image uploaded:", imageData.url)
           }
         } catch (uploadErr) {
-          console.error("❌ Cloudinary upload error:", uploadErr)
           return res.status(500).json({
             message: "Failed to upload some images to Cloudinary",
             error: uploadErr.message,
@@ -373,28 +347,13 @@ router.post("/upload-product", adminAuth, uploadProduct.array("images", 50), asy
       }
     }
 
-    // Add variant-specific images to variants
     const processedVariants = parsedVariants.map((variant, index) => ({
       ...variant,
       images: variantImages[index] || [],
     }))
 
-    console.log(
-      "🔄 Creating product with processed variants:",
-      processedVariants.map((v, i) => ({
-        index: i,
-        size: v.size,
-        imagesCount: v.images?.length || 0,
-      })),
-    )
-
-    // Check if we have at least one image (either main or variant)
-    const hasMainImages = uploadedImages.length > 0
-    const hasVariantImages = Object.keys(variantImages).length > 0
-
-    if (!hasMainImages && !hasVariantImages) {
-      console.error("❌ No images provided")
-      return res.status(400).json({ message: "At least one image is required for the product or its variants" })
+    if (uploadedImages.length === 0 && Object.keys(variantImages).length === 0) {
+      return res.status(400).json({ message: "At least one image is required for product or variants" })
     }
 
     const newProduct = new Product({
@@ -403,20 +362,14 @@ router.post("/upload-product", adminAuth, uploadProduct.array("images", 50), asy
       description: description || "",
       details: parsedDetails,
       keywords: parsedKeywords,
-      productType: productType,
-      images: {
-        others: uploadedImages,
-      },
+      productType,
+      images: { others: uploadedImages },
     })
 
-    console.log("💾 Saving product to database...")
     await newProduct.save()
-    console.log("✅ Product saved successfully with ID:", newProduct._id)
-
     res.status(201).json(newProduct)
   } catch (err) {
-    console.error("❌ Product upload error:", err)
-    console.error("❌ Error stack:", err.stack)
+    console.error("Product upload error:", err)
     res.status(500).json({
       message: "Server error",
       error: err.message,
@@ -425,31 +378,20 @@ router.post("/upload-product", adminAuth, uploadProduct.array("images", 50), asy
   }
 })
 
-router.post("/create", adminAuth, async (req, res) => {
-  try {
-    const product = new Product(req.body)
-    await product.save()
-    res.status(201).json(product)
-  } catch (err) {
-    res.status(400).json({ message: err.message })
-  }
-})
-
+// Update product
 router.put("/update/:id", adminAuth, uploadProduct.array("images", 50), async (req, res) => {
   try {
-    console.log("🔍 UPDATE ROUTE CALLED")
-    console.log("🔍 Product ID:", req.params.id)
-    console.log("🔍 Request body keys:", Object.keys(req.body))
-    console.log("🔍 Files received:", req.files?.length || 0)
-
     const { name, variants, description, details, removedImages, keywords, productType } = req.body
-
     const product = await Product.findById(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
+    // Update simple fields
+    if (name) {
+      product.title = name.trim()
+      product.name = name.trim()
+    }
+    product.description = description?.trim() || product.description
     product.productType = productType || product.productType
-    product.title = name?.trim() || product.title
-    product.description = description?.trim() || ""
 
     if (details) {
       try {
@@ -471,72 +413,9 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 50), async (r
       }
     }
 
-    if (variants) {
-      try {
-        const parsedVariants = JSON.parse(variants)
-        if (!Array.isArray(parsedVariants) || parsedVariants.length === 0) {
-          return res.status(400).json({ message: "At least one variant is required" })
-        }
-
-        // Process new images for variants
-        const variantImages = {}
-        if (req.files && req.files.length > 0) {
-          for (const file of req.files) {
-            if (file.fieldname.startsWith("variant_")) {
-              const variantIndex = file.fieldname.split("_")[1]
-              if (!variantImages[variantIndex]) {
-                variantImages[variantIndex] = []
-              }
-              try {
-                const result = await streamUpload(file.buffer, "mirakle-products")
-                variantImages[variantIndex].push({ url: result.secure_url, public_id: result.public_id })
-                console.log(`✅ Variant ${variantIndex} image uploaded during update`)
-              } catch (uploadErr) {
-                console.error("❌ Variant image upload error:", uploadErr)
-                return res.status(500).json({ message: "Failed to upload variant images" })
-              }
-            }
-          }
-        }
-
-        // Merge existing variant images with new ones
-        const processedVariants = parsedVariants.map((variant, index) => {
-          const existingVariant = product.variants[index] || {}
-          const existingImages = existingVariant.images || []
-          const newImages = variantImages[index] || []
-
-          return {
-            ...variant,
-            images: [...existingImages, ...newImages],
-          }
-        })
-
-        product.variants = processedVariants
-      } catch (err) {
-        console.error("❌ Variants processing error:", err)
-        return res.status(400).json({ message: "Invalid variants JSON" })
-      }
-    }
-
-    // Handle main product images (existing logic)
-    const newImages = []
-    if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
-        if (!file.fieldname.startsWith("variant_")) {
-          try {
-            const result = await streamUpload(file.buffer, "mirakle-products")
-            newImages.push({ url: result.secure_url, public_id: result.public_id })
-          } catch (uploadErr) {
-            console.error("❌ Main image upload error:", uploadErr)
-            return res.status(500).json({ message: "Failed to upload main images" })
-          }
-        }
-      }
-    }
-
-    // Handle removed images
+    // Remove images requested by admin
     if (removedImages) {
-      let removedPublicIds
+      let removedPublicIds = []
       try {
         removedPublicIds = JSON.parse(removedImages)
         if (Array.isArray(removedPublicIds)) {
@@ -545,10 +424,7 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 50), async (r
             if (removedPublicIds.includes(imgObj.public_id)) {
               try {
                 await cloudinary.uploader.destroy(imgObj.public_id)
-                console.log(`🗑️ Deleted image: ${imgObj.public_id}`)
-              } catch (cloudinaryErr) {
-                console.error(`❌ Failed to delete image ${imgObj.public_id}:`, cloudinaryErr)
-              }
+              } catch {}
             } else {
               imagesToKeep.push(imgObj)
             }
@@ -556,13 +432,64 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 50), async (r
           product.images.others = imagesToKeep
         }
       } catch (err) {
-        console.error("❌ Error processing removed images:", err)
+        console.error("Error processing removed images:", err)
       }
     }
 
-    product.images.others = [...product.images.others, ...newImages]
+    // Process new images for variants and main images
+    const variantImages = {}
+    const newMainImages = []
 
-    if (product.images.others.length === 0 && !product.variants.some((v) => v.images && v.images.length > 0)) {
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        if (file.fieldname.startsWith("variant_")) {
+          const variantIndex = parseInt(file.fieldname.split("_")[1])
+          if (!variantImages[variantIndex]) variantImages[variantIndex] = []
+          try {
+            const result = await streamUpload(file.buffer, "mirakle-products")
+            variantImages[variantIndex].push({ url: result.secure_url, public_id: result.public_id })
+          } catch (uploadErr) {
+            return res.status(500).json({ message: "Failed to upload variant images" })
+          }
+        } else {
+          try {
+            const result = await streamUpload(file.buffer, "mirakle-products")
+            newMainImages.push({ url: result.secure_url, public_id: result.public_id })
+          } catch (uploadErr) {
+            return res.status(500).json({ message: "Failed to upload main images" })
+          }
+        }
+      }
+    }
+
+    // Parse & update variants with images merged
+    if (variants) {
+      let parsedVariants
+      try {
+        parsedVariants = JSON.parse(variants)
+        if (!Array.isArray(parsedVariants) || parsedVariants.length === 0) {
+          return res.status(400).json({ message: "At least one variant is required" })
+        }
+      } catch {
+        return res.status(400).json({ message: "Invalid variants JSON" })
+      }
+
+      product.variants = parsedVariants.map((variant, index) => {
+        const existingImages = product.variants[index]?.images || []
+        const newVarImages = variantImages[index] || []
+        return {
+          ...variant,
+          images: [...existingImages.filter((img) => !removedImages?.includes(img.public_id)), ...newVarImages],
+        }
+      })
+    }
+
+    product.images.others = [...product.images.others, ...newMainImages]
+
+    if (
+      product.images.others.length === 0 &&
+      !product.variants.some((v) => v.images && v.images.length > 0)
+    ) {
       return res.status(400).json({ message: "Product must have at least one image." })
     }
 
@@ -570,14 +497,14 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 50), async (r
     product.markModified("variants")
     await product.save()
 
-    console.log("✅ Product updated successfully")
     res.json({ message: "Product updated successfully", product })
   } catch (err) {
-    console.error("❌ Update error:", err)
+    console.error("Update error:", err)
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
 
+// Toggle product stock
 router.put("/toggle-stock/:id", adminAuth, async (req, res) => {
   try {
     const { isOutOfStock } = req.body
@@ -588,75 +515,66 @@ router.put("/toggle-stock/:id", adminAuth, async (req, res) => {
   }
 })
 
-// CRITICAL: Add this missing route - this is what's causing your 404 error!
+// Toggle variant stock
 router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
   try {
     const { variantIndex, isOutOfStock } = req.body
     const productId = req.params.id
 
-    console.log("🔍 Toggle variant stock request:", { productId, variantIndex, isOutOfStock })
-
-    // Validate input
     if (typeof variantIndex !== "number" || variantIndex < 0) {
       return res.status(400).json({ message: "Invalid variant index" })
     }
-
     if (typeof isOutOfStock !== "boolean") {
-      return res.status(400).json({ message: "isOutOfStock must be a boolean" })
+      return res.status(400).json({ message: "isOutOfStock must be boolean" })
     }
 
     const product = await Product.findById(productId)
-    if (!product) {
-      return res.status(404).json({ message: "Product not found" })
-    }
-
+    if (!product) return res.status(404).json({ message: "Product not found" })
     if (variantIndex >= product.variants.length) {
       return res.status(400).json({ message: "Variant index out of range" })
     }
 
-    // Update the specific variant's stock status
     product.variants[variantIndex].isOutOfStock = isOutOfStock
-
-    // Mark the variants array as modified for Mongoose
     product.markModified("variants")
-
     await product.save()
 
-    console.log("✅ Variant stock updated successfully")
     res.json({
       message: "Variant stock updated successfully",
       product,
       updatedVariant: product.variants[variantIndex],
     })
   } catch (err) {
-    console.error("❌ Variant stock update error:", err)
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
 
+// Delete product
 router.delete("/delete/:id", adminAuth, async (req, res) => {
   try {
-    const productId = req.params.id
-    const product = await Product.findByIdAndDelete(productId)
-
+    const product = await Product.findById(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
-    if (product.images && product.images.others && product.images.others.length > 0) {
-      for (const imgObj of product.images.others) {
-        if (imgObj.public_id) {
+    // Delete all images from Cloudinary (main + variants)
+    for (const imgObj of product.images?.others || []) {
+      if (imgObj.public_id) {
+        try {
+          await cloudinary.uploader.destroy(imgObj.public_id)
+        } catch {}
+      }
+    }
+    for (const variant of product.variants || []) {
+      for (const img of variant.images || []) {
+        if (img.public_id) {
           try {
-            await cloudinary.uploader.destroy(imgObj.public_id)
-            console.log(`🗑️ Cloudinary image deleted: ${imgObj.public_id}`)
-          } catch (cloudinaryErr) {
-            console.error(`❌ Failed to delete image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
-          }
+            await cloudinary.uploader.destroy(img.public_id)
+          } catch {}
         }
       }
     }
 
+    await Product.findByIdAndDelete(req.params.id)
     res.json({ message: "Product deleted" })
   } catch (err) {
-    console.error("Delete product error:", err)
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
