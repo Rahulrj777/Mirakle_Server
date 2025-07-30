@@ -29,18 +29,21 @@ const reviewStorage = multer.diskStorage({
 const uploadReview = multer({ storage: reviewStorage })
 const uploadProduct = multer({ storage: multer.memoryStorage() })
 
-const streamUpload = (buffer, folder) => {
+const streamUpload = (fileBuffer, folder) => {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
-        folder
+        folder: folder,
       },
       (error, result) => {
-        if (result) resolve(result)
-        else reject(error)
-      }
+        if (result) {
+          resolve(result)
+        } else {
+          reject(error)
+        }
+      },
     )
-    streamifier.createReadStream(buffer).pipe(stream)
+    streamifier.createReadStream(fileBuffer).pipe(stream)
   })
 }
 
@@ -201,26 +204,20 @@ router.delete("/:id/review/:reviewId", userAuth, async (req, res) => {
     const product = await Product.findById(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
-    const reviewIndex = product.reviews.findIndex(
-      (r) => r._id.toString() === reviewId && r.user.toString() === userId
-    )
+    const reviewIndex = product.reviews.findIndex((r) => r._id.toString() === reviewId && r.user.toString() === userId)
+
     if (reviewIndex === -1) {
       return res.status(404).json({ message: "Review not found or unauthorized" })
     }
 
     const reviewToDelete = product.reviews[reviewIndex]
-
-    // Delete images from Cloudinary
     if (reviewToDelete.images && reviewToDelete.images.length > 0) {
-      for (const img of reviewToDelete.images) {
-        if (img.public_id) {
-          try {
-            await cloudinary.uploader.destroy(img.public_id)
-          } catch (error) {
-            console.error("Failed to delete Cloudinary image:", img.public_id, error)
-          }
+      reviewToDelete.images.forEach((imgPath) => {
+        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath)
         }
-      }
+      })
     }
 
     product.reviews.splice(reviewIndex, 1)
@@ -236,44 +233,77 @@ router.delete("/:id/review/:reviewId", userAuth, async (req, res) => {
 router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req, res) => {
   try {
     const { rating, comment } = req.body
+    const reviewImages = req.files?.map((file) => `/uploads/reviews/${file.filename}`) || []
 
-    let reviewImages = []
-    // Upload review images to Cloudinary
-    if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
-        const result = await streamUpload(file.buffer, "review-images")
-        reviewImages.push(result.secure_url) // store this url in DB
-      }
+    if (!rating || !comment) {
+      reviewImages.forEach((imgPath) => {
+        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+      })
+      return res.status(400).json({ message: "Rating and comment are required" })
     }
 
-    if (!rating || !comment) return res.status(400).json({ message: "Rating and comment are required" })
+    if (rating < 1 || rating > 5) {
+      reviewImages.forEach((imgPath) => {
+        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+      })
+      return res.status(400).json({ message: "Rating must be between 1 and 5" })
+    }
 
     const product = await Product.findById(req.params.id)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-
-    // Create new review with Cloudinary URLs in images array
-    const newReview = {
-      user: req.user.id,
-      name: req.user.name || "User",
-      rating: Number(rating),
-      comment: comment.trim(),
-      images: reviewImages,
-      createdAt: new Date(),
+    if (!product) {
+      reviewImages.forEach((imgPath) => {
+        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+      })
+      return res.status(404).json({ message: "Product not found" })
     }
 
-    product.reviews.push(newReview)
+    const existingReviewIndex = product.reviews.findIndex((r) => r.user.toString() === req.user.id)
+
+    if (existingReviewIndex !== -1) {
+      product.reviews[existingReviewIndex].images.forEach((imgPath) => {
+        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+      })
+
+      product.reviews[existingReviewIndex].rating = Number(rating)
+      product.reviews[existingReviewIndex].comment = comment.trim()
+      product.reviews[existingReviewIndex].images = reviewImages
+      product.reviews[existingReviewIndex].createdAt = new Date()
+    } else {
+      const newReview = {
+        user: req.user.id,
+        name: req.user.name || "User",
+        rating: Number(rating),
+        comment: comment.trim(),
+        images: reviewImages,
+        createdAt: new Date(),
+      }
+      product.reviews.push(newReview)
+    }
+
     await product.save()
 
     const updatedProduct = await Product.findById(req.params.id)
-    res.status(201).json({ message: "Review submitted successfully", reviews: updatedProduct.reviews })
-
+    res.status(201).json({
+      message: "Review submitted successfully",
+      reviews: updatedProduct?.reviews,
+    })
   } catch (err) {
     console.error("Review submission error:", err)
+    if (req.files) {
+      req.files.forEach((file) => {
+        const fullPath = path.join(reviewUploadDir, file.filename)
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
+      })
+    }
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
 
-
+// Admin routes - using adminAuth middleware
 router.post("/upload-product", adminAuth, uploadProduct.array("images", 10), async (req, res) => {
   try {
     const { name, variants, description, details, keywords, productType } = req.body
@@ -341,6 +371,7 @@ router.post("/create", adminAuth, async (req, res) => {
   }
 })
 
+// This is the problematic route - let's add extra debugging
 router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (req, res) => {
   try {
     console.log("🔍 UPDATE ROUTE CALLED")
