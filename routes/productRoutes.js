@@ -386,6 +386,7 @@ router.post("/migrate-images/:id", adminAuth, async (req, res) => {
 
     console.log("🔄 MIGRATING PRODUCT:", product.title)
     console.log("🔄 Common images:", product.images?.others?.length || 0)
+    console.log("🔄 Common images data:", product.images?.others)
     console.log("🔄 Variants:", product.variants?.length || 0)
 
     // Check if product has common images but variants don't have images
@@ -394,35 +395,62 @@ router.post("/migrate-images/:id", adminAuth, async (req, res) => {
 
       if (needsMigration) {
         console.log("🔄 Product needs migration - moving common images to first variant")
+        console.log("🔄 Images to migrate:", JSON.stringify(product.images.others, null, 2))
 
-        // Move common images to the first variant
+        // Create updated variants with proper image structure
         const updatedVariants = product.variants.map((variant, index) => {
+          const variantObj = variant.toObject ? variant.toObject() : variant
+
           if (index === 0) {
             // First variant gets all common images
+            console.log("🔄 Assigning images to first variant:", product.images.others)
             return {
-              ...variant,
-              images: product.images.others || [],
+              ...variantObj,
+              images: [...(product.images.others || [])], // Spread to create new array
             }
           } else {
-            // Other variants get empty images array (can be populated later)
+            // Other variants keep their existing images or get empty array
             return {
-              ...variant,
-              images: variant.images || [],
+              ...variantObj,
+              images: variantObj.images || [],
             }
           }
         })
 
-        // Update the product
+        console.log(
+          "🔄 Updated variants structure:",
+          JSON.stringify(
+            updatedVariants.map((v) => ({
+              size: v.size,
+              imageCount: v.images?.length || 0,
+              images: v.images,
+            })),
+            null,
+            2,
+          ),
+        )
+
+        // Update the product with new structure
         const updatedProduct = await Product.findByIdAndUpdate(
           req.params.id,
           {
-            variants: updatedVariants,
-            images: { others: [] }, // Clear common images
+            $set: {
+              variants: updatedVariants,
+              "images.others": [], // Clear common images
+            },
           },
-          { new: true },
+          { new: true, runValidators: false }, // Skip validation to avoid conflicts
         )
 
         console.log("✅ Migration completed")
+        console.log(
+          "🔍 Updated product variants:",
+          updatedProduct.variants.map((v) => ({
+            size: v.size,
+            imageCount: v.images?.length || 0,
+          })),
+        )
+
         return res.json({
           message: "Product migrated successfully",
           product: updatedProduct,
@@ -460,23 +488,43 @@ router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
       const needsMigration = product.variants.some((v) => !v.images || v.images.length === 0)
       if (needsMigration) {
         console.log("🔄 AUTO-MIGRATING during update...")
+        console.log("🔄 Common images to migrate:", product.images.others)
+
         const updatedVariants = product.variants.map((variant, index) => {
+          const variantObj = variant.toObject ? variant.toObject() : variant
+
           if (index === 0) {
-            return { ...variant, images: product.images.others || [] }
+            console.log("🔄 Moving images to first variant:", product.images.others)
+            return {
+              ...variantObj,
+              images: [...(product.images.others || [])],
+            }
           } else {
-            return { ...variant, images: variant.images || [] }
+            return {
+              ...variantObj,
+              images: variantObj.images || [],
+            }
           }
         })
 
         migratedProduct = await Product.findByIdAndUpdate(
           req.params.id,
           {
-            variants: updatedVariants,
-            images: { others: [] },
+            $set: {
+              variants: updatedVariants,
+              "images.others": [],
+            },
           },
-          { new: true },
+          { new: true, runValidators: false },
         )
         console.log("✅ Auto-migration completed")
+        console.log(
+          "🔍 Migrated variants:",
+          migratedProduct.variants.map((v) => ({
+            size: v.size,
+            imageCount: v.images?.length || 0,
+          })),
+        )
       }
     }
 
