@@ -378,26 +378,111 @@ router.post("/create", adminAuth, async (req, res) => {
   }
 })
 
-// Updated update route to handle variant images and preserve existing images
+// MIGRATION ROUTE - Convert old products to new variant image structure
+router.post("/migrate-images/:id", adminAuth, async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id)
+    if (!product) return res.status(404).json({ message: "Product not found" })
+
+    console.log("🔄 MIGRATING PRODUCT:", product.title)
+    console.log("🔄 Common images:", product.images?.others?.length || 0)
+    console.log("🔄 Variants:", product.variants?.length || 0)
+
+    // Check if product has common images but variants don't have images
+    if (product.images?.others?.length > 0 && product.variants?.length > 0) {
+      const needsMigration = product.variants.some((v) => !v.images || v.images.length === 0)
+
+      if (needsMigration) {
+        console.log("🔄 Product needs migration - moving common images to first variant")
+
+        // Move common images to the first variant
+        const updatedVariants = product.variants.map((variant, index) => {
+          if (index === 0) {
+            // First variant gets all common images
+            return {
+              ...variant,
+              images: product.images.others || [],
+            }
+          } else {
+            // Other variants get empty images array (can be populated later)
+            return {
+              ...variant,
+              images: variant.images || [],
+            }
+          }
+        })
+
+        // Update the product
+        const updatedProduct = await Product.findByIdAndUpdate(
+          req.params.id,
+          {
+            variants: updatedVariants,
+            images: { others: [] }, // Clear common images
+          },
+          { new: true },
+        )
+
+        console.log("✅ Migration completed")
+        return res.json({
+          message: "Product migrated successfully",
+          product: updatedProduct,
+          migrated: true,
+        })
+      }
+    }
+
+    res.json({ message: "Product doesn't need migration", migrated: false })
+  } catch (err) {
+    console.error("❌ Migration error:", err)
+    res.status(500).json({ message: "Migration failed", error: err.message })
+  }
+})
+
+// Updated update route with migration support
 router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
   try {
     console.log("🔍 UPDATE ROUTE CALLED")
     console.log("🔍 Product ID:", req.params.id)
-    console.log("🔍 Request body keys:", Object.keys(req.body))
-    console.log("🔍 Files received:", req.files?.length || 0)
 
     const { name, variants, description, details, keywords, productType } = req.body
 
-    // Use findById first to get current product
+    // Get current product
     const product = await Product.findById(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
-    console.log("🔍 Current product variants:", product.variants?.length || 0)
+    console.log("🔍 Current product structure:")
+    console.log("🔍 Common images:", product.images?.others?.length || 0)
+    console.log("🔍 Variants:", product.variants?.length || 0)
+
+    // AUTO-MIGRATE if needed
+    let migratedProduct = product
+    if (product.images?.others?.length > 0 && product.variants?.length > 0) {
+      const needsMigration = product.variants.some((v) => !v.images || v.images.length === 0)
+      if (needsMigration) {
+        console.log("🔄 AUTO-MIGRATING during update...")
+        const updatedVariants = product.variants.map((variant, index) => {
+          if (index === 0) {
+            return { ...variant, images: product.images.others || [] }
+          } else {
+            return { ...variant, images: variant.images || [] }
+          }
+        })
+
+        migratedProduct = await Product.findByIdAndUpdate(
+          req.params.id,
+          {
+            variants: updatedVariants,
+            images: { others: [] },
+          },
+          { new: true },
+        )
+        console.log("✅ Auto-migration completed")
+      }
+    }
 
     // Prepare update object
     const updateData = {}
 
-    // Fix: Set both name and title fields
     if (name?.trim()) {
       updateData.name = name.trim()
       updateData.title = name.trim()
@@ -417,9 +502,6 @@ router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
     if (keywords) {
       try {
         const parsedKeywords = JSON.parse(keywords)
-        if (!Array.isArray(parsedKeywords) || !parsedKeywords.every((k) => typeof k === "string")) {
-          return res.status(400).json({ message: "Keywords must be an array of strings" })
-        }
         updateData.keywords = parsedKeywords
       } catch {
         return res.status(400).json({ message: "Invalid keywords JSON" })
@@ -429,91 +511,58 @@ router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
     if (variants) {
       try {
         const parsedVariants = JSON.parse(variants)
-        if (!Array.isArray(parsedVariants) || parsedVariants.length === 0) {
-          return res.status(400).json({ message: "At least one variant is required" })
-        }
+        console.log("🔍 Processing variants for update...")
 
-        console.log("🔍 Parsed variants:", parsedVariants.length)
-
-        // Process variant images for update - PRESERVE EXISTING IMAGES
         const processedVariants = await Promise.all(
           parsedVariants.map(async (variant, variantIndex) => {
-            console.log(`🔍 Processing variant ${variantIndex}:`, variant)
-
-            // Start with existing images from the current product
+            // Start with existing images from migrated product
             let variantImages = []
-            if (product.variants[variantIndex]?.images) {
-              variantImages = [...product.variants[variantIndex].images]
+            if (migratedProduct.variants[variantIndex]?.images) {
+              variantImages = [...migratedProduct.variants[variantIndex].images]
               console.log(`🔍 Preserving ${variantImages.length} existing images for variant ${variantIndex}`)
             }
 
-            // Find new images for this variant
+            // Add new images
             const variantImageFiles =
               req.files?.filter((file) => file.fieldname.startsWith(`variant_${variantIndex}_image_`)) || []
 
             console.log(`🔍 Found ${variantImageFiles.length} new images for variant ${variantIndex}`)
 
-            // Upload new variant images to Cloudinary and add to existing images
             for (const file of variantImageFiles) {
               try {
                 const result = await streamUpload(file.buffer, "mirakle-products/variants")
                 variantImages.push({ url: result.secure_url, public_id: result.public_id })
-                console.log(`🔍 Uploaded new image for variant ${variantIndex}:`, result.secure_url)
+                console.log(`✅ Uploaded new image for variant ${variantIndex}`)
               } catch (uploadErr) {
-                console.error("❌ Cloudinary upload error during update:", uploadErr)
-                return res.status(500).json({
-                  message: "Failed to upload new variant images to Cloudinary",
-                  error: uploadErr.message,
-                })
+                console.error("❌ Upload error:", uploadErr)
+                return res.status(500).json({ message: "Failed to upload images" })
               }
             }
 
-            console.log(`🔍 Final image count for variant ${variantIndex}:`, variantImages.length)
-
             return {
               ...variant,
-              images: variantImages, // This now includes both existing and new images
+              images: variantImages,
             }
           }),
         )
 
         updateData.variants = processedVariants
-        console.log("🔍 Final processed variants:", processedVariants.length)
       } catch (err) {
         console.error("❌ Variants processing error:", err)
         return res.status(400).json({ message: "Invalid variants JSON" })
       }
     }
 
-    console.log("🔍 Update data keys:", Object.keys(updateData))
-
-    // Use findByIdAndUpdate with new: true to avoid version conflicts
+    // Update the product
     const updatedProduct = await Product.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
       runValidators: true,
-      // This option helps avoid version conflicts
-      overwrite: false,
     })
 
-    if (!updatedProduct) {
-      return res.status(404).json({ message: "Product not found after update" })
-    }
-
     console.log("✅ Product updated successfully")
-    console.log("🔍 Updated product variants:", updatedProduct.variants?.length || 0)
-
     res.json({ message: "Product updated successfully", product: updatedProduct })
   } catch (err) {
     console.error("❌ Update error:", err)
-
-    // Handle specific MongoDB version conflict errors
-    if (err.name === "VersionError" || err.message.includes("version") || err.message.includes("modifiedPaths")) {
-      return res.status(409).json({
-        message: "Product was modified by another process. Please refresh and try again.",
-        error: "Version conflict",
-      })
-    }
-
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
@@ -573,63 +622,16 @@ router.put("/toggle-stock/:id", adminAuth, async (req, res) => {
   }
 })
 
-// Debug route to check product data
-router.get("/debug/:id", adminAuth, async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-
-    console.log("🔍 DEBUG - Product data:")
-    console.log("🔍 Product ID:", product._id)
-    console.log("🔍 Product title:", product.title)
-    console.log("🔍 Variants count:", product.variants?.length || 0)
-
-    product.variants?.forEach((variant, index) => {
-      console.log(`🔍 Variant ${index}:`, {
-        size: variant.size,
-        price: variant.price,
-        imageCount: variant.images?.length || 0,
-        images: variant.images?.map((img) => ({ url: img.url, public_id: img.public_id })) || [],
-      })
-    })
-
-    res.json({
-      productId: product._id,
-      title: product.title,
-      variantsCount: product.variants?.length || 0,
-      variants:
-        product.variants?.map((variant, index) => ({
-          index,
-          size: variant.size,
-          price: variant.price,
-          imageCount: variant.images?.length || 0,
-          images: variant.images || [],
-        })) || [],
-    })
-  } catch (err) {
-    console.error("❌ Debug error:", err)
-    res.status(500).json({ message: "Debug failed", error: err.message })
-  }
-})
-
-// New route to toggle variant stock
 router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
   try {
     const productId = req.params.id
     const { variantIndex, isOutOfStock } = req.body
-    console.log("🔄 Toggle variant stock request:", { productId, variantIndex, isOutOfStock })
 
-    // Convert variantIndex to number and validate
     const index = Number.parseInt(variantIndex)
     if (isNaN(index) || index < 0) {
       return res.status(400).json({ message: "Invalid variant index" })
     }
 
-    if (typeof isOutOfStock !== "boolean") {
-      return res.status(400).json({ message: "isOutOfStock must be boolean" })
-    }
-
-    // First check if product exists and variant index is valid
     const product = await Product.findById(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
@@ -637,7 +639,6 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
       return res.status(400).json({ message: "Variant index out of range" })
     }
 
-    // Use direct MongoDB update to avoid validation issues
     const updateResult = await Product.updateOne(
       { _id: productId },
       { $set: { [`variants.${index}.isOutOfStock`]: isOutOfStock } },
@@ -647,10 +648,7 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
       return res.status(400).json({ message: "Failed to update variant stock" })
     }
 
-    // Get the updated product to return
     const updatedProduct = await Product.findById(productId)
-
-    console.log("✅ Variant stock updated successfully")
     res.json({
       message: "Variant stock updated successfully",
       product: updatedProduct,
