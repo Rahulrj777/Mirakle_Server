@@ -47,6 +47,43 @@ const streamUpload = (fileBuffer, folder) => {
   })
 }
 
+router.post("/check-stock", async (req, res) => {
+  try {
+    const { productIds } = req.body
+
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      return res.status(400).json({ message: "Product IDs array is required" })
+    }
+
+    console.log("🔍 Checking stock for products:", productIds)
+
+    const products = await Product.find({
+      _id: { $in: productIds },
+    }).select("_id title variants isOutOfStock")
+
+    console.log(`✅ Found ${products.length} products for stock check`)
+
+    res.json({
+      products: products.map((product) => ({
+        _id: product._id,
+        title: product.title,
+        isOutOfStock: product.isOutOfStock,
+        variants: product.variants.map((variant) => ({
+          size: variant.size,
+          weight: variant.weight,
+          price: variant.price,
+          discountPercent: variant.discountPercent,
+          stock: variant.stock,
+          isOutOfStock: variant.isOutOfStock,
+        })),
+      })),
+    })
+  } catch (error) {
+    console.error("❌ Stock check error:", error)
+    res.status(500).json({ message: "Failed to check stock", error: error.message })
+  }
+})
+
 // Get all products
 router.get("/", async (req, res) => {
   try {
@@ -493,45 +530,6 @@ router.delete("/delete/:id", adminAuth, async (req, res) => {
   } catch (err) {
     console.error("Delete product error:", err)
     res.status(500).json({ message: "Server error", error: err.message })
-  }
-})
-
-router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
-  try {
-    const productId = req.params.id
-    const { variantIndex, isOutOfStock } = req.body
-
-    // Convert variantIndex to number and validate
-    const index = parseInt(variantIndex)
-    if (isNaN(index) || index < 0) {
-      return res.status(400).json({ message: "Invalid variant index" })
-    }
-    
-    if (typeof isOutOfStock !== "boolean") {
-      return res.status(400).json({ message: "isOutOfStock must be boolean" })
-    }
-
-    // Find product by id
-    const product = await Product.findById(productId)
-    if (!product) return res.status(404).json({ message: "Product not found" })
-
-    if (!product.variants || index >= product.variants.length) {
-      return res.status(400).json({ message: "Variant index out of range" })
-    }
-
-    // Update variant stock status
-    product.variants[index].isOutOfStock = isOutOfStock
-    product.markModified("variants")
-    await product.save()
-
-    res.json({
-      message: "Variant stock updated successfully",
-      product,
-      updatedVariant: product.variants[index],
-    })
-  } catch (error) {
-    console.error("Variant stock update error:", error)
-    res.status(500).json({ message: "Server error", error: error.message })
   }
 })
 
