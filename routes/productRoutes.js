@@ -308,10 +308,6 @@ router.post("/upload-product", adminAuth, uploadProduct.array("images", 10), asy
   try {
     const { name, variants, description, details, keywords, productType } = req.body
 
-    console.log("🔍 Upload product request received")
-    console.log("🔍 Body:", req.body)
-    console.log("🖼 Files received for upload:", req.files?.length)
-
     if (!name || !variants || !productType) {
       return res.status(400).json({ message: "Product name, variants, and product type are required" })
     }
@@ -342,7 +338,8 @@ router.post("/upload-product", adminAuth, uploadProduct.array("images", 10), asy
     }
 
     const newProduct = new Product({
-      title: name,
+      name: name,        // Add this line
+      title: name,       // Keep this line
       variants: parsedVariants,
       description: description || "",
       details: parsedDetails,
@@ -376,15 +373,20 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (r
   try {
     console.log("🔍 UPDATE ROUTE CALLED")
     console.log("🔍 Product ID:", req.params.id)
-    console.log("🔍 User from middleware:", req.user)
     console.log("🔍 Request body keys:", Object.keys(req.body))
 
     const { name, variants, description, details, removedImages, keywords, productType } = req.body
+
     const product = await Product.findById(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
+    // Fix: Set both name and title fields
+    if (name?.trim()) {
+      product.name = name.trim()
+      product.title = name.trim()
+    }
+    
     product.productType = productType || product.productType
-    product.title = name?.trim() || product.title
     product.description = description?.trim() || ""
 
     if (details) {
@@ -435,50 +437,34 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (r
     }
 
     console.log("--- Image Removal Process Start ---")
-    console.log("Product images before removal attempt:", JSON.stringify(product.images.others, null, 2))
-
     if (removedImages) {
       let removedPublicIds
       try {
         removedPublicIds = JSON.parse(removedImages)
-        console.log("Server received public IDs to remove (parsed from client):", removedPublicIds)
         if (!Array.isArray(removedPublicIds)) {
-          console.error("❌ removedImages is not an array after parsing:", removedPublicIds)
           return res.status(400).json({ message: "Invalid removedImages format: expected an array." })
         }
       } catch (err) {
-        console.error("❌ Error parsing removedImages JSON:", err)
         return res.status(400).json({ message: "Invalid removedImages JSON" })
       }
 
       const imagesToKeep = []
       for (const imgObj of product.images.others) {
-        console.log(
-          `Processing existing image: URL=${imgObj.url}, Public ID=${imgObj.public_id}. Is it in removed list? ${removedPublicIds.includes(imgObj.public_id)}`,
-        )
         if (removedPublicIds.includes(imgObj.public_id)) {
-          console.log(`Attempting to delete Cloudinary image with public_id: ${imgObj.public_id}`)
           try {
-            const destroyResult = await cloudinary.uploader.destroy(imgObj.public_id)
-            console.log(`Cloudinary deletion result for ${imgObj.public_id}:`, destroyResult)
-            if (destroyResult.result !== "ok") {
-              console.warn(`⚠️ Cloudinary deletion for ${imgObj.public_id} was not 'ok'. Result:`, destroyResult)
-            }
+            await cloudinary.uploader.destroy(imgObj.public_id)
+            console.log(`🗑️ Cloudinary image deleted: ${imgObj.public_id}`)
           } catch (cloudinaryErr) {
             console.error(`❌ Failed to delete image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
           }
         } else {
-          console.log(`Keeping image: ${imgObj.public_id}`)
           imagesToKeep.push(imgObj)
         }
       }
-
       product.images.others = imagesToKeep
-      console.log("Product images array after filtering for removal:", JSON.stringify(product.images.others, null, 2))
     }
 
     product.images.others = [...product.images.others, ...newImages]
-    console.log("Product images after adding new images:", JSON.stringify(product.images.others, null, 2))
 
     if (product.images.others.length === 0) {
       return res.status(400).json({ message: "Product must have at least one image." })
@@ -488,8 +474,6 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (r
     await product.save()
 
     console.log("✅ Product updated successfully")
-    console.log("Product saved successfully. Final images in DB:", JSON.stringify(product.images.others, null, 2))
-
     res.json({ message: "Product updated successfully", product })
   } catch (err) {
     console.error("❌ Update error:", err)
@@ -530,6 +514,49 @@ router.delete("/delete/:id", adminAuth, async (req, res) => {
   } catch (err) {
     console.error("Delete product error:", err)
     res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
+  try {
+    const productId = req.params.id
+    const { variantIndex, isOutOfStock } = req.body
+
+    console.log("🔄 Toggle variant stock request:", { productId, variantIndex, isOutOfStock })
+
+    // Convert variantIndex to number and validate
+    const index = parseInt(variantIndex)
+    if (isNaN(index) || index < 0) {
+      return res.status(400).json({ message: "Invalid variant index" })
+    }
+    
+    if (typeof isOutOfStock !== "boolean") {
+      return res.status(400).json({ message: "isOutOfStock must be boolean" })
+    }
+
+    // Find product by id
+    const product = await Product.findById(productId)
+    if (!product) return res.status(404).json({ message: "Product not found" })
+
+    if (!product.variants || index >= product.variants.length) {
+      return res.status(400).json({ message: "Variant index out of range" })
+    }
+
+    // Update variant stock status
+    product.variants[index].isOutOfStock = isOutOfStock
+    product.markModified("variants")
+    await product.save()
+
+    console.log("✅ Variant stock updated successfully")
+
+    res.json({
+      message: "Variant stock updated successfully",
+      product,
+      updatedVariant: product.variants[index],
+    })
+  } catch (error) {
+    console.error("❌ Variant stock update error:", error)
+    res.status(500).json({ message: "Server error", error: error.message })
   }
 })
 
