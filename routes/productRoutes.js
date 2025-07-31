@@ -138,7 +138,7 @@ router.get("/related/:id", async (req, res) => {
 })
 
 router.get("/search", async (req, res) => {
-  const query = req.query.query || ""
+  const query = req.query.query || "";
   try {
     const results = await Product.aggregate([
       {
@@ -172,9 +172,7 @@ router.get("/search", async (req, res) => {
                     },
                   },
                   2,
-                  {
-                    $cond: [{ $regexMatch: { input: "$description", regex: query, options: "i" } }, 1, 0],
-                  },
+                  { $cond: [{ $regexMatch: { input: "$description", regex: query, options: "i" } }, 1, 0] },
                 ],
               },
             ],
@@ -183,14 +181,24 @@ router.get("/search", async (req, res) => {
       },
       { $sort: { matchStrength: -1, createdAt: -1 } },
       { $limit: 10 },
-    ])
+      {
+        $project: {
+          _id: 1,
+          title: 1,
+          images: 1,
+          keywords: 1,
+          description: 1,
+          matchStrength: 1,
+        },
+      },
+    ]);
 
-    res.json(results)
+    res.json(results);
   } catch (error) {
-    console.error("Search failed:", error)
-    res.status(500).json({ error: "Search failed" })
+    console.error("Search failed:", error);
+    res.status(500).json({ error: "Search failed" });
   }
-})
+});
 
 // User auth routes
 router.delete("/:id/review/:reviewId", userAuth, async (req, res) => {
