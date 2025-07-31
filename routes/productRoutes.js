@@ -12,8 +12,8 @@ import adminAuth from "../middleware/adminAuth.js"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const router = express.Router()
-const reviewUploadDir = path.join(__dirname, "../uploads/reviews")
 
+const reviewUploadDir = path.join(__dirname, "../uploads/reviews")
 if (!fs.existsSync(reviewUploadDir)) fs.mkdirSync(reviewUploadDir, { recursive: true })
 
 const reviewStorage = multer.diskStorage({
@@ -50,19 +50,16 @@ const streamUpload = (fileBuffer, folder) => {
 router.post("/check-stock", async (req, res) => {
   try {
     const { productIds } = req.body
-
     if (!Array.isArray(productIds) || productIds.length === 0) {
       return res.status(400).json({ message: "Product IDs array is required" })
     }
 
     console.log("🔍 Checking stock for products:", productIds)
-
     const products = await Product.find({
       _id: { $in: productIds },
     }).select("_id title variants isOutOfStock")
 
     console.log(`✅ Found ${products.length} products for stock check`)
-
     res.json({
       products: products.map((product) => ({
         _id: product._id,
@@ -205,7 +202,6 @@ router.delete("/:id/review/:reviewId", userAuth, async (req, res) => {
     if (!product) return res.status(404).json({ message: "Product not found" })
 
     const reviewIndex = product.reviews.findIndex((r) => r._id.toString() === reviewId && r.user.toString() === userId)
-
     if (reviewIndex === -1) {
       return res.status(404).json({ message: "Review not found or unauthorized" })
     }
@@ -261,13 +257,11 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
     }
 
     const existingReviewIndex = product.reviews.findIndex((r) => r.user.toString() === req.user.id)
-
     if (existingReviewIndex !== -1) {
       product.reviews[existingReviewIndex].images.forEach((imgPath) => {
         const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
         if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
       })
-
       product.reviews[existingReviewIndex].rating = Number(rating)
       product.reviews[existingReviewIndex].comment = comment.trim()
       product.reviews[existingReviewIndex].images = reviewImages
@@ -285,8 +279,8 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
     }
 
     await product.save()
-
     const updatedProduct = await Product.findById(req.params.id)
+
     res.status(201).json({
       message: "Review submitted successfully",
       reviews: updatedProduct?.reviews,
@@ -304,16 +298,12 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
 })
 
 // Admin routes - using adminAuth middleware
-router.post("/upload-product", adminAuth, uploadProduct.array("images", 10), async (req, res) => {
+router.post("/upload-product", adminAuth, uploadProduct.any(), async (req, res) => {
   try {
     const { name, variants, description, details, keywords, productType } = req.body
 
     if (!name || !variants || !productType) {
       return res.status(400).json({ message: "Product name, variants, and product type are required" })
-    }
-
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ message: "At least one image is required for the product" })
     }
 
     let parsedVariants, parsedDetails, parsedKeywords
@@ -326,27 +316,47 @@ router.post("/upload-product", adminAuth, uploadProduct.array("images", 10), asy
       return res.status(400).json({ message: "Invalid JSON in variants, details, or keywords" })
     }
 
-    const uploadedImages = []
-    for (const file of req.files) {
-      try {
-        const result = await streamUpload(file.buffer, "mirakle-products")
-        uploadedImages.push({ url: result.secure_url, public_id: result.public_id })
-      } catch (uploadErr) {
-        console.error("❌ Cloudinary upload error:", uploadErr)
-        return res.status(500).json({ message: "Failed to upload some images to Cloudinary", error: uploadErr.message })
-      }
-    }
+    // Process variant images
+    const processedVariants = await Promise.all(
+      parsedVariants.map(async (variant, variantIndex) => {
+        const variantImages = []
+
+        // Find images for this variant
+        const variantImageFiles = req.files.filter((file) =>
+          file.fieldname.startsWith(`variant_${variantIndex}_image_`),
+        )
+
+        // Upload variant images to Cloudinary
+        for (const file of variantImageFiles) {
+          try {
+            const result = await streamUpload(file.buffer, "mirakle-products/variants")
+            variantImages.push({ url: result.secure_url, public_id: result.public_id })
+          } catch (uploadErr) {
+            console.error("❌ Cloudinary upload error:", uploadErr)
+            return res.status(500).json({
+              message: "Failed to upload variant images to Cloudinary",
+              error: uploadErr.message,
+            })
+          }
+        }
+
+        return {
+          ...variant,
+          images: variantImages,
+        }
+      }),
+    )
 
     const newProduct = new Product({
-      name: name,        // Add this line
-      title: name,       // Keep this line
-      variants: parsedVariants,
+      name: name,
+      title: name,
+      variants: processedVariants,
       description: description || "",
       details: parsedDetails,
       keywords: parsedKeywords,
       productType: productType,
       images: {
-        others: uploadedImages,
+        others: [], // No common images, only variant-specific images
       },
     })
 
@@ -368,15 +378,14 @@ router.post("/create", adminAuth, async (req, res) => {
   }
 })
 
-// This is the problematic route - let's add extra debugging
-router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (req, res) => {
+// Updated update route to handle variant images
+router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
   try {
     console.log("🔍 UPDATE ROUTE CALLED")
     console.log("🔍 Product ID:", req.params.id)
     console.log("🔍 Request body keys:", Object.keys(req.body))
 
-    const { name, variants, description, details, removedImages, keywords, productType } = req.body
-
+    const { name, variants, description, details, keywords, productType } = req.body
     const product = await Product.findById(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
@@ -385,7 +394,7 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (r
       product.name = name.trim()
       product.title = name.trim()
     }
-    
+
     product.productType = productType || product.productType
     product.description = description?.trim() || ""
 
@@ -415,62 +424,46 @@ router.put("/update/:id", adminAuth, uploadProduct.array("images", 10), async (r
         if (!Array.isArray(parsedVariants) || parsedVariants.length === 0) {
           return res.status(400).json({ message: "At least one variant is required" })
         }
-        product.variants = parsedVariants
+
+        // Process variant images for update
+        const processedVariants = await Promise.all(
+          parsedVariants.map(async (variant, variantIndex) => {
+            // Keep existing images if no new images uploaded
+            const variantImages = product.variants[variantIndex]?.images || []
+
+            // Find new images for this variant
+            const variantImageFiles = req.files.filter((file) =>
+              file.fieldname.startsWith(`variant_${variantIndex}_image_`),
+            )
+
+            // Upload new variant images to Cloudinary
+            for (const file of variantImageFiles) {
+              try {
+                const result = await streamUpload(file.buffer, "mirakle-products/variants")
+                variantImages.push({ url: result.secure_url, public_id: result.public_id })
+              } catch (uploadErr) {
+                console.error("❌ Cloudinary upload error during update:", uploadErr)
+                return res.status(500).json({
+                  message: "Failed to upload new variant images to Cloudinary",
+                  error: uploadErr.message,
+                })
+              }
+            }
+
+            return {
+              ...variant,
+              images: variantImages,
+            }
+          }),
+        )
+
+        product.variants = processedVariants
       } catch (err) {
         return res.status(400).json({ message: "Invalid variants JSON" })
       }
     }
 
-    const newImages = []
-    if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
-        try {
-          const result = await streamUpload(file.buffer, "mirakle-products")
-          newImages.push({ url: result.secure_url, public_id: result.public_id })
-        } catch (uploadErr) {
-          console.error("❌ Cloudinary upload error during update:", uploadErr)
-          return res
-            .status(500)
-            .json({ message: "Failed to upload new images to Cloudinary", error: uploadErr.message })
-        }
-      }
-    }
-
-    console.log("--- Image Removal Process Start ---")
-    if (removedImages) {
-      let removedPublicIds
-      try {
-        removedPublicIds = JSON.parse(removedImages)
-        if (!Array.isArray(removedPublicIds)) {
-          return res.status(400).json({ message: "Invalid removedImages format: expected an array." })
-        }
-      } catch (err) {
-        return res.status(400).json({ message: "Invalid removedImages JSON" })
-      }
-
-      const imagesToKeep = []
-      for (const imgObj of product.images.others) {
-        if (removedPublicIds.includes(imgObj.public_id)) {
-          try {
-            await cloudinary.uploader.destroy(imgObj.public_id)
-            console.log(`🗑️ Cloudinary image deleted: ${imgObj.public_id}`)
-          } catch (cloudinaryErr) {
-            console.error(`❌ Failed to delete image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
-          }
-        } else {
-          imagesToKeep.push(imgObj)
-        }
-      }
-      product.images.others = imagesToKeep
-    }
-
-    product.images.others = [...product.images.others, ...newImages]
-
-    if (product.images.others.length === 0) {
-      return res.status(400).json({ message: "Product must have at least one image." })
-    }
-
-    product.markModified("images.others")
+    product.markModified("variants")
     await product.save()
 
     console.log("✅ Product updated successfully")
@@ -487,6 +480,25 @@ router.delete("/delete/:id", adminAuth, async (req, res) => {
     const product = await Product.findByIdAndDelete(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
+    // Delete variant images from Cloudinary
+    if (product.variants && product.variants.length > 0) {
+      for (const variant of product.variants) {
+        if (variant.images && variant.images.length > 0) {
+          for (const imgObj of variant.images) {
+            if (imgObj.public_id) {
+              try {
+                await cloudinary.uploader.destroy(imgObj.public_id)
+                console.log(`🗑️ Cloudinary variant image deleted: ${imgObj.public_id}`)
+              } catch (cloudinaryErr) {
+                console.error(`❌ Failed to delete variant image ${imgObj.public_id} from Cloudinary:`, cloudinaryErr)
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Delete common images from Cloudinary (if any exist)
     if (product.images && product.images.others && product.images.others.length > 0) {
       for (const imgObj of product.images.others) {
         if (imgObj.public_id) {
@@ -522,15 +534,14 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
   try {
     const productId = req.params.id
     const { variantIndex, isOutOfStock } = req.body
-
     console.log("🔄 Toggle variant stock request:", { productId, variantIndex, isOutOfStock })
 
     // Convert variantIndex to number and validate
-    const index = parseInt(variantIndex)
+    const index = Number.parseInt(variantIndex)
     if (isNaN(index) || index < 0) {
       return res.status(400).json({ message: "Invalid variant index" })
     }
-    
+
     if (typeof isOutOfStock !== "boolean") {
       return res.status(400).json({ message: "isOutOfStock must be boolean" })
     }
@@ -546,7 +557,7 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
     // Use direct MongoDB update to avoid validation issues
     const updateResult = await Product.updateOne(
       { _id: productId },
-      { $set: { [`variants.${index}.isOutOfStock`]: isOutOfStock } }
+      { $set: { [`variants.${index}.isOutOfStock`]: isOutOfStock } },
     )
 
     if (updateResult.modifiedCount === 0) {
@@ -555,9 +566,8 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
 
     // Get the updated product to return
     const updatedProduct = await Product.findById(productId)
-    
-    console.log("✅ Variant stock updated successfully")
 
+    console.log("✅ Variant stock updated successfully")
     res.json({
       message: "Variant stock updated successfully",
       product: updatedProduct,
@@ -568,4 +578,5 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message })
   }
 })
+
 export default router
