@@ -791,4 +791,130 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
   }
 })
 
+// ✅ NEW ROUTE: Database migration to add images field to all variants
+router.post("/fix-database-structure", adminAuth, async (req, res) => {
+  try {
+    console.log("🔄 Starting database structure fix...")
+
+    // Find all products
+    const products = await Product.find({})
+    console.log(`📦 Found ${products.length} products to fix`)
+
+    let fixedCount = 0
+    let errorCount = 0
+    const results = []
+
+    for (const product of products) {
+      try {
+        console.log(`🔄 Processing: ${product.title}`)
+
+        let needsUpdate = false
+        const updatedVariants = product.variants.map((variant, index) => {
+          const variantObj = variant.toObject ? variant.toObject() : { ...variant }
+
+          // Add images field if it doesn't exist
+          if (!variantObj.images) {
+            variantObj.images = []
+            needsUpdate = true
+            console.log(`  ➕ Added images field to variant ${index} (${variantObj.size})`)
+          }
+
+          // If this is the first variant and there are common images, migrate them
+          if (index === 0 && product.images?.others?.length > 0) {
+            variantObj.images = [...(product.images.others || [])]
+            needsUpdate = true
+            console.log(`  🔄 Migrated ${product.images.others.length} common images to first variant`)
+          }
+
+          return variantObj
+        })
+
+        if (needsUpdate) {
+          // Update the product with new variant structure
+          await Product.findByIdAndUpdate(
+            product._id,
+            {
+              variants: updatedVariants,
+              // Clear common images after migration
+              ...(product.images?.others?.length > 0 && { "images.others": [] }),
+            },
+            { new: true },
+          )
+
+          fixedCount++
+          results.push({
+            id: product._id,
+            title: product.title,
+            status: "fixed",
+            variantsUpdated: updatedVariants.length,
+            imagesMigrated: product.images?.others?.length || 0,
+          })
+          console.log(`  ✅ Successfully fixed: ${product.title}`)
+        } else {
+          results.push({
+            id: product._id,
+            title: product.title,
+            status: "no_changes_needed",
+          })
+          console.log(`  ⏭️  No changes needed: ${product.title}`)
+        }
+      } catch (error) {
+        errorCount++
+        results.push({
+          id: product._id,
+          title: product.title,
+          status: "error",
+          error: error.message,
+        })
+        console.error(`  ❌ Error fixing ${product.title}:`, error.message)
+      }
+    }
+
+    console.log("\n🎉 Database structure fix completed!")
+    console.log(`✅ Successfully fixed: ${fixedCount} products`)
+    console.log(`❌ Errors: ${errorCount} products`)
+
+    // Verify the fix
+    console.log("\n🔍 Verifying database structure...")
+    const verifyProducts = await Product.find({}).limit(3)
+    const verification = []
+
+    for (const product of verifyProducts) {
+      const variantInfo = product.variants.map((variant, index) => ({
+        index,
+        size: variant.size,
+        hasImagesField: "images" in variant,
+        imageCount: variant.images?.length || 0,
+      }))
+
+      verification.push({
+        title: product.title,
+        variants: variantInfo,
+      })
+
+      console.log(`📦 ${product.title}:`)
+      variantInfo.forEach((v) => {
+        console.log(
+          `  Variant ${v.index} (${v.size}): ${v.hasImagesField ? "✅" : "❌"} images field, ${v.imageCount} images`,
+        )
+      })
+    }
+
+    res.json({
+      message: "Database structure fix completed successfully!",
+      totalProducts: products.length,
+      fixedCount,
+      errorCount,
+      results,
+      verification,
+    })
+  } catch (err) {
+    console.error("❌ Database structure fix failed:", err)
+    res.status(500).json({
+      message: "Database structure fix failed",
+      error: err.message,
+    })
+  }
+})
+
 export default router
