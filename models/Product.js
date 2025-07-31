@@ -11,6 +11,7 @@ const variantSchema = new mongoose.Schema(
     discountPercent: { type: Number, default: 0 },
     stock: { type: Number, default: 0 },
     isOutOfStock: { type: Boolean, default: false },
+    // ✅ ADDED: Images field for variant-specific images
     images: [
       {
         url: { type: String },
