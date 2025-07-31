@@ -517,6 +517,19 @@ router.delete("/delete/:id", adminAuth, async (req, res) => {
   }
 })
 
+// ... existing routes ...
+
+router.put("/toggle-stock/:id", adminAuth, async (req, res) => {
+  try {
+    const { isOutOfStock } = req.body
+    const updated = await Product.findByIdAndUpdate(req.params.id, { isOutOfStock }, { new: true })
+    res.json(updated)
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
+})
+
+// ADD THIS NEW ROUTE HERE:
 router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
   try {
     const productId = req.params.id
@@ -558,6 +571,10 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
     console.error("❌ Variant stock update error:", error)
     res.status(500).json({ message: "Server error", error: error.message })
   }
+})
+
+router.delete("/delete/:id", adminAuth, async (req, res) => {
+  // ... existing delete route ...
 })
 
 export default router
