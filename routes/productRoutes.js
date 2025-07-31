@@ -229,39 +229,36 @@ router.delete("/:id/review/:reviewId", userAuth, async (req, res) => {
 router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req, res) => {
   try {
     const { rating, comment } = req.body
-    const reviewImages = req.files?.map((file) => `/uploads/reviews/${file.filename}`) || []
+
+    // Upload review images to Cloudinary instead of local storage
+    const reviewImages = []
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        try {
+          const result = await streamUpload(file.buffer, "mirakle-reviews")
+          reviewImages.push(result.secure_url)
+        } catch (uploadErr) {
+          console.error("❌ Review image upload error:", uploadErr)
+          // Continue with other images even if one fails
+        }
+      }
+    }
 
     if (!rating || !comment) {
-      reviewImages.forEach((imgPath) => {
-        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
-        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
-      })
       return res.status(400).json({ message: "Rating and comment are required" })
     }
 
     if (rating < 1 || rating > 5) {
-      reviewImages.forEach((imgPath) => {
-        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
-        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
-      })
       return res.status(400).json({ message: "Rating must be between 1 and 5" })
     }
 
     const product = await Product.findById(req.params.id)
     if (!product) {
-      reviewImages.forEach((imgPath) => {
-        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
-        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
-      })
       return res.status(404).json({ message: "Product not found" })
     }
 
     const existingReviewIndex = product.reviews.findIndex((r) => r.user.toString() === req.user.id)
     if (existingReviewIndex !== -1) {
-      product.reviews[existingReviewIndex].images.forEach((imgPath) => {
-        const fullPath = path.join(reviewUploadDir, path.basename(imgPath))
-        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
-      })
       product.reviews[existingReviewIndex].rating = Number(rating)
       product.reviews[existingReviewIndex].comment = comment.trim()
       product.reviews[existingReviewIndex].images = reviewImages
@@ -287,12 +284,6 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
     })
   } catch (err) {
     console.error("Review submission error:", err)
-    if (req.files) {
-      req.files.forEach((file) => {
-        const fullPath = path.join(reviewUploadDir, file.filename)
-        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath)
-      })
-    }
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
@@ -461,7 +452,7 @@ router.post("/migrate-images/:id", adminAuth, async (req, res) => {
   }
 })
 
-// BULK MIGRATION ROUTE - Fix all products at once
+// SIMPLIFIED BULK MIGRATION ROUTE - Only migrate existing products
 router.post("/bulk-migrate-images", adminAuth, async (req, res) => {
   try {
     console.log("🔄 STARTING BULK MIGRATION...")
@@ -475,12 +466,11 @@ router.post("/bulk-migrate-images", adminAuth, async (req, res) => {
       try {
         console.log(`🔄 Processing product: ${product.title}`)
 
-        // Always ensure variants have images field
         let needsUpdate = false
         const updatedVariants = product.variants.map((variant, index) => {
           const variantObj = variant.toObject ? variant.toObject() : { ...variant }
 
-          // Check if images field is missing
+          // Add images field if it doesn't exist
           if (!variantObj.images) {
             variantObj.images = []
             needsUpdate = true
@@ -635,6 +625,7 @@ router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
       }
     }
 
+    // Before processing new variants, handle image deletion
     if (variants) {
       try {
         const parsedVariants = JSON.parse(variants)
@@ -645,6 +636,7 @@ router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
             // Start with existing images from migrated product
             let variantImages = []
             if (migratedProduct.variants[variantIndex]?.images) {
+              // Only keep images that are not marked for deletion
               variantImages = [...migratedProduct.variants[variantIndex].images]
               console.log(`🔍 Preserving ${variantImages.length} existing images for variant ${variantIndex}`)
             }
@@ -695,6 +687,52 @@ router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
   } catch (err) {
     console.error("❌ Update error:", err)
     res.status(500).json({ message: "Server error", error: err.message })
+  }
+})
+
+// DELETE specific variant image
+router.delete("/variant-image/:productId/:variantIndex/:imageIndex", adminAuth, async (req, res) => {
+  try {
+    const { productId, variantIndex, imageIndex } = req.params
+    const variantIdx = Number.parseInt(variantIndex)
+    const imgIdx = Number.parseInt(imageIndex)
+
+    const product = await Product.findById(productId)
+    if (!product) return res.status(404).json({ message: "Product not found" })
+
+    if (!product.variants[variantIdx]) {
+      return res.status(404).json({ message: "Variant not found" })
+    }
+
+    if (!product.variants[variantIdx].images[imgIdx]) {
+      return res.status(404).json({ message: "Image not found" })
+    }
+
+    const imageToDelete = product.variants[variantIdx].images[imgIdx]
+
+    // Delete from Cloudinary
+    if (imageToDelete.public_id) {
+      try {
+        await cloudinary.uploader.destroy(imageToDelete.public_id)
+        console.log(`🗑️ Deleted image from Cloudinary: ${imageToDelete.public_id}`)
+      } catch (cloudinaryErr) {
+        console.error("❌ Failed to delete from Cloudinary:", cloudinaryErr)
+      }
+    }
+
+    // Remove from database
+    await Product.updateOne({ _id: productId }, { $unset: { [`variants.${variantIdx}.images.${imgIdx}`]: 1 } })
+
+    await Product.updateOne({ _id: productId }, { $pull: { [`variants.${variantIdx}.images`]: null } })
+
+    const updatedProduct = await Product.findById(productId)
+    res.json({
+      message: "Image deleted successfully",
+      product: updatedProduct,
+    })
+  } catch (err) {
+    console.error("❌ Delete variant image error:", err)
+    res.status(500).json({ message: "Failed to delete image", error: err.message })
   }
 })
 
@@ -788,132 +826,6 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
   } catch (error) {
     console.error("❌ Variant stock update error:", error)
     res.status(500).json({ message: "Server error", error: error.message })
-  }
-})
-
-// ✅ NEW ROUTE: Database migration to add images field to all variants
-router.post("/fix-database-structure", adminAuth, async (req, res) => {
-  try {
-    console.log("🔄 Starting database structure fix...")
-
-    // Find all products
-    const products = await Product.find({})
-    console.log(`📦 Found ${products.length} products to fix`)
-
-    let fixedCount = 0
-    let errorCount = 0
-    const results = []
-
-    for (const product of products) {
-      try {
-        console.log(`🔄 Processing: ${product.title}`)
-
-        let needsUpdate = false
-        const updatedVariants = product.variants.map((variant, index) => {
-          const variantObj = variant.toObject ? variant.toObject() : { ...variant }
-
-          // Add images field if it doesn't exist
-          if (!variantObj.images) {
-            variantObj.images = []
-            needsUpdate = true
-            console.log(`  ➕ Added images field to variant ${index} (${variantObj.size})`)
-          }
-
-          // If this is the first variant and there are common images, migrate them
-          if (index === 0 && product.images?.others?.length > 0) {
-            variantObj.images = [...(product.images.others || [])]
-            needsUpdate = true
-            console.log(`  🔄 Migrated ${product.images.others.length} common images to first variant`)
-          }
-
-          return variantObj
-        })
-
-        if (needsUpdate) {
-          // Update the product with new variant structure
-          await Product.findByIdAndUpdate(
-            product._id,
-            {
-              variants: updatedVariants,
-              // Clear common images after migration
-              ...(product.images?.others?.length > 0 && { "images.others": [] }),
-            },
-            { new: true },
-          )
-
-          fixedCount++
-          results.push({
-            id: product._id,
-            title: product.title,
-            status: "fixed",
-            variantsUpdated: updatedVariants.length,
-            imagesMigrated: product.images?.others?.length || 0,
-          })
-          console.log(`  ✅ Successfully fixed: ${product.title}`)
-        } else {
-          results.push({
-            id: product._id,
-            title: product.title,
-            status: "no_changes_needed",
-          })
-          console.log(`  ⏭️  No changes needed: ${product.title}`)
-        }
-      } catch (error) {
-        errorCount++
-        results.push({
-          id: product._id,
-          title: product.title,
-          status: "error",
-          error: error.message,
-        })
-        console.error(`  ❌ Error fixing ${product.title}:`, error.message)
-      }
-    }
-
-    console.log("\n🎉 Database structure fix completed!")
-    console.log(`✅ Successfully fixed: ${fixedCount} products`)
-    console.log(`❌ Errors: ${errorCount} products`)
-
-    // Verify the fix
-    console.log("\n🔍 Verifying database structure...")
-    const verifyProducts = await Product.find({}).limit(3)
-    const verification = []
-
-    for (const product of verifyProducts) {
-      const variantInfo = product.variants.map((variant, index) => ({
-        index,
-        size: variant.size,
-        hasImagesField: "images" in variant,
-        imageCount: variant.images?.length || 0,
-      }))
-
-      verification.push({
-        title: product.title,
-        variants: variantInfo,
-      })
-
-      console.log(`📦 ${product.title}:`)
-      variantInfo.forEach((v) => {
-        console.log(
-          `  Variant ${v.index} (${v.size}): ${v.hasImagesField ? "✅" : "❌"} images field, ${v.imageCount} images`,
-        )
-      })
-    }
-
-    res.json({
-      message: "Database structure fix completed successfully!",
-      totalProducts: products.length,
-      fixedCount,
-      errorCount,
-      results,
-      verification,
-    })
-  } catch (err) {
-    console.error("❌ Database structure fix failed:", err)
-    res.status(500).json({
-      message: "Database structure fix failed",
-      error: err.message,
-    })
   }
 })
 
