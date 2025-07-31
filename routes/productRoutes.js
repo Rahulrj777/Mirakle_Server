@@ -378,7 +378,7 @@ router.post("/create", adminAuth, async (req, res) => {
   }
 })
 
-// Updated update route to handle variant images
+// Updated update route to handle variant images and fix version conflicts
 router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
   try {
     console.log("🔍 UPDATE ROUTE CALLED")
@@ -386,23 +386,28 @@ router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
     console.log("🔍 Request body keys:", Object.keys(req.body))
 
     const { name, variants, description, details, keywords, productType } = req.body
+
+    // Use findById first to get current product
     const product = await Product.findById(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
+    // Prepare update object
+    const updateData = {}
+
     // Fix: Set both name and title fields
     if (name?.trim()) {
-      product.name = name.trim()
-      product.title = name.trim()
+      updateData.name = name.trim()
+      updateData.title = name.trim()
     }
 
-    product.productType = productType || product.productType
-    product.description = description?.trim() || ""
+    if (productType) updateData.productType = productType
+    if (description !== undefined) updateData.description = description?.trim() || ""
 
     if (details) {
       try {
-        product.details = JSON.parse(details)
+        updateData.details = JSON.parse(details)
       } catch {
-        product.details = {}
+        updateData.details = {}
       }
     }
 
@@ -412,7 +417,7 @@ router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
         if (!Array.isArray(parsedKeywords) || !parsedKeywords.every((k) => typeof k === "string")) {
           return res.status(400).json({ message: "Keywords must be an array of strings" })
         }
-        product.keywords = parsedKeywords
+        updateData.keywords = parsedKeywords
       } catch {
         return res.status(400).json({ message: "Invalid keywords JSON" })
       }
@@ -457,19 +462,37 @@ router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
           }),
         )
 
-        product.variants = processedVariants
+        updateData.variants = processedVariants
       } catch (err) {
         return res.status(400).json({ message: "Invalid variants JSON" })
       }
     }
 
-    product.markModified("variants")
-    await product.save()
+    // Use findByIdAndUpdate with new: true to avoid version conflicts
+    const updatedProduct = await Product.findByIdAndUpdate(req.params.id, updateData, {
+      new: true,
+      runValidators: true,
+      // This option helps avoid version conflicts
+      overwrite: false,
+    })
+
+    if (!updatedProduct) {
+      return res.status(404).json({ message: "Product not found after update" })
+    }
 
     console.log("✅ Product updated successfully")
-    res.json({ message: "Product updated successfully", product })
+    res.json({ message: "Product updated successfully", product: updatedProduct })
   } catch (err) {
     console.error("❌ Update error:", err)
+
+    // Handle specific MongoDB version conflict errors
+    if (err.name === "VersionError" || err.message.includes("version") || err.message.includes("modifiedPaths")) {
+      return res.status(409).json({
+        message: "Product was modified by another process. Please refresh and try again.",
+        error: "Version conflict",
+      })
+    }
+
     res.status(500).json({ message: "Server error", error: err.message })
   }
 })
