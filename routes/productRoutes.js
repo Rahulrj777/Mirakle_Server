@@ -162,7 +162,7 @@ router.get("/search", async (req, res) => {
                     $regexMatch: {
                       input: {
                         $reduce: {
-                          input: "$keywords",
+                          input: { $ifNull: ["$keywords", []] },
                           initialValue: "",
                           in: { $concat: ["$$value", " ", "$$this"] },
                         },
@@ -172,7 +172,13 @@ router.get("/search", async (req, res) => {
                     },
                   },
                   2,
-                  { $cond: [{ $regexMatch: { input: "$description", regex: query, options: "i" } }, 1, 0] },
+                  {
+                    $cond: [
+                      { $regexMatch: { input: { $ifNull: ["$description", ""] }, regex: query, options: "i" } },
+                      1,
+                      0,
+                    ],
+                  },
                 ],
               },
             ],
@@ -186,6 +192,7 @@ router.get("/search", async (req, res) => {
           _id: 1,
           title: 1,
           images: 1,
+          "images.others": 1, // Explicitly include the array of other images
           keywords: 1,
           description: 1,
           matchStrength: 1,
