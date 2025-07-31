@@ -26,7 +26,7 @@ const reviewStorage = multer.diskStorage({
   },
 })
 
-const uploadReview = multer({ storage: reviewStorage })
+const uploadReview = multer({ storage: multer.memoryStorage() });
 const uploadProduct = multer({ storage: multer.memoryStorage() })
 
 const streamUpload = (fileBuffer, folder) => {
