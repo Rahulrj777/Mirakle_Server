@@ -378,18 +378,21 @@ router.post("/create", adminAuth, async (req, res) => {
   }
 })
 
-// Updated update route to handle variant images and fix version conflicts
+// Updated update route to handle variant images and preserve existing images
 router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
   try {
     console.log("🔍 UPDATE ROUTE CALLED")
     console.log("🔍 Product ID:", req.params.id)
     console.log("🔍 Request body keys:", Object.keys(req.body))
+    console.log("🔍 Files received:", req.files?.length || 0)
 
     const { name, variants, description, details, keywords, productType } = req.body
 
     // Use findById first to get current product
     const product = await Product.findById(req.params.id)
     if (!product) return res.status(404).json({ message: "Product not found" })
+
+    console.log("🔍 Current product variants:", product.variants?.length || 0)
 
     // Prepare update object
     const updateData = {}
@@ -430,22 +433,32 @@ router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
           return res.status(400).json({ message: "At least one variant is required" })
         }
 
-        // Process variant images for update
+        console.log("🔍 Parsed variants:", parsedVariants.length)
+
+        // Process variant images for update - PRESERVE EXISTING IMAGES
         const processedVariants = await Promise.all(
           parsedVariants.map(async (variant, variantIndex) => {
-            // Keep existing images if no new images uploaded
-            const variantImages = product.variants[variantIndex]?.images || []
+            console.log(`🔍 Processing variant ${variantIndex}:`, variant)
+
+            // Start with existing images from the current product
+            let variantImages = []
+            if (product.variants[variantIndex]?.images) {
+              variantImages = [...product.variants[variantIndex].images]
+              console.log(`🔍 Preserving ${variantImages.length} existing images for variant ${variantIndex}`)
+            }
 
             // Find new images for this variant
-            const variantImageFiles = req.files.filter((file) =>
-              file.fieldname.startsWith(`variant_${variantIndex}_image_`),
-            )
+            const variantImageFiles =
+              req.files?.filter((file) => file.fieldname.startsWith(`variant_${variantIndex}_image_`)) || []
 
-            // Upload new variant images to Cloudinary
+            console.log(`🔍 Found ${variantImageFiles.length} new images for variant ${variantIndex}`)
+
+            // Upload new variant images to Cloudinary and add to existing images
             for (const file of variantImageFiles) {
               try {
                 const result = await streamUpload(file.buffer, "mirakle-products/variants")
                 variantImages.push({ url: result.secure_url, public_id: result.public_id })
+                console.log(`🔍 Uploaded new image for variant ${variantIndex}:`, result.secure_url)
               } catch (uploadErr) {
                 console.error("❌ Cloudinary upload error during update:", uploadErr)
                 return res.status(500).json({
@@ -455,18 +468,24 @@ router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
               }
             }
 
+            console.log(`🔍 Final image count for variant ${variantIndex}:`, variantImages.length)
+
             return {
               ...variant,
-              images: variantImages,
+              images: variantImages, // This now includes both existing and new images
             }
           }),
         )
 
         updateData.variants = processedVariants
+        console.log("🔍 Final processed variants:", processedVariants.length)
       } catch (err) {
+        console.error("❌ Variants processing error:", err)
         return res.status(400).json({ message: "Invalid variants JSON" })
       }
     }
+
+    console.log("🔍 Update data keys:", Object.keys(updateData))
 
     // Use findByIdAndUpdate with new: true to avoid version conflicts
     const updatedProduct = await Product.findByIdAndUpdate(req.params.id, updateData, {
@@ -481,6 +500,8 @@ router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
     }
 
     console.log("✅ Product updated successfully")
+    console.log("🔍 Updated product variants:", updatedProduct.variants?.length || 0)
+
     res.json({ message: "Product updated successfully", product: updatedProduct })
   } catch (err) {
     console.error("❌ Update error:", err)
@@ -552,7 +573,46 @@ router.put("/toggle-stock/:id", adminAuth, async (req, res) => {
   }
 })
 
-// ADD THIS NEW ROUTE HERE:
+// Debug route to check product data
+router.get("/debug/:id", adminAuth, async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id)
+    if (!product) return res.status(404).json({ message: "Product not found" })
+
+    console.log("🔍 DEBUG - Product data:")
+    console.log("🔍 Product ID:", product._id)
+    console.log("🔍 Product title:", product.title)
+    console.log("🔍 Variants count:", product.variants?.length || 0)
+
+    product.variants?.forEach((variant, index) => {
+      console.log(`🔍 Variant ${index}:`, {
+        size: variant.size,
+        price: variant.price,
+        imageCount: variant.images?.length || 0,
+        images: variant.images?.map((img) => ({ url: img.url, public_id: img.public_id })) || [],
+      })
+    })
+
+    res.json({
+      productId: product._id,
+      title: product.title,
+      variantsCount: product.variants?.length || 0,
+      variants:
+        product.variants?.map((variant, index) => ({
+          index,
+          size: variant.size,
+          price: variant.price,
+          imageCount: variant.images?.length || 0,
+          images: variant.images || [],
+        })) || [],
+    })
+  } catch (err) {
+    console.error("❌ Debug error:", err)
+    res.status(500).json({ message: "Debug failed", error: err.message })
+  }
+})
+
+// New route to toggle variant stock
 router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
   try {
     const productId = req.params.id
