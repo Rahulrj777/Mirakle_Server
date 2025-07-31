@@ -378,7 +378,7 @@ router.post("/create", adminAuth, async (req, res) => {
   }
 })
 
-// ENHANCED MIGRATION ROUTE - Force migrate images even if variants have empty arrays
+// ENHANCED MIGRATION ROUTE - Force migrate images and ensure images field exists
 router.post("/migrate-images/:id", adminAuth, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id)
@@ -389,77 +389,163 @@ router.post("/migrate-images/:id", adminAuth, async (req, res) => {
     console.log("🔄 Common images data:", JSON.stringify(product.images?.others, null, 2))
     console.log("🔄 Variants:", product.variants?.length || 0)
 
-    // Check if product has common images
-    if (product.images?.others?.length > 0 && product.variants?.length > 0) {
-      console.log("🔄 Product has common images - FORCE migrating to first variant")
-      console.log("🔄 Images to migrate:", JSON.stringify(product.images.others, null, 2))
+    // Always ensure variants have images field, even if empty
+    const updatedVariants = product.variants.map((variant, index) => {
+      const variantObj = variant.toObject ? variant.toObject() : { ...variant }
 
-      // Create updated variants with proper image structure - FORCE migration
-      const updatedVariants = product.variants.map((variant, index) => {
-        const variantObj = variant.toObject ? variant.toObject() : variant
+      // Ensure images field exists
+      if (!variantObj.images) {
+        variantObj.images = []
+      }
 
-        if (index === 0) {
-          // First variant gets all common images - FORCE OVERRIDE
-          console.log("🔄 FORCE assigning images to first variant:", product.images.others)
-          return {
-            ...variantObj,
-            images: [...(product.images.others || [])], // Force assign images
-          }
-        } else {
-          // Other variants keep empty arrays for now
-          return {
-            ...variantObj,
-            images: [], // Force empty for other variants
-          }
-        }
-      })
+      if (index === 0 && product.images?.others?.length > 0) {
+        // First variant gets all common images
+        console.log("🔄 FORCE assigning images to first variant:", product.images.others)
+        variantObj.images = [...(product.images.others || [])]
+      }
 
-      console.log(
-        "🔄 Updated variants structure:",
-        JSON.stringify(
-          updatedVariants.map((v) => ({
-            size: v.size,
-            imageCount: v.images?.length || 0,
-            images: v.images,
-          })),
-          null,
-          2,
-        ),
-      )
+      return variantObj
+    })
 
-      // Update the product with new structure - FORCE UPDATE
-      const updatedProduct = await Product.findByIdAndUpdate(
-        req.params.id,
-        {
-          $set: {
-            variants: updatedVariants,
-            "images.others": [], // Clear common images
-          },
-        },
-        { new: true, runValidators: false }, // Skip validation to avoid conflicts
-      )
-
-      console.log("✅ FORCE Migration completed")
-      console.log(
-        "🔍 Updated product variants:",
-        updatedProduct.variants.map((v) => ({
+    console.log(
+      "🔄 Updated variants structure:",
+      JSON.stringify(
+        updatedVariants.map((v) => ({
           size: v.size,
           imageCount: v.images?.length || 0,
+          images: v.images,
         })),
-      )
+        null,
+        2,
+      ),
+    )
 
-      return res.json({
-        message: "Product force migrated successfully",
-        product: updatedProduct,
-        migrated: true,
-      })
-    } else {
-      console.log("❌ No common images to migrate")
-      res.json({ message: "Product has no common images to migrate", migrated: false })
+    // Force update each variant individually to ensure images field is added
+    for (let i = 0; i < updatedVariants.length; i++) {
+      await Product.updateOne(
+        { _id: req.params.id },
+        {
+          $set: {
+            [`variants.${i}`]: updatedVariants[i],
+          },
+        },
+      )
     }
+
+    // Clear common images after migration
+    if (product.images?.others?.length > 0) {
+      await Product.updateOne({ _id: req.params.id }, { $set: { "images.others": [] } })
+    }
+
+    // Get the updated product
+    const updatedProduct = await Product.findById(req.params.id)
+
+    console.log("✅ FORCE Migration completed")
+    console.log(
+      "🔍 Updated product variants:",
+      updatedProduct.variants.map((v) => ({
+        size: v.size,
+        imageCount: v.images?.length || 0,
+        hasImagesField: "images" in v,
+      })),
+    )
+
+    return res.json({
+      message: "Product force migrated successfully",
+      product: updatedProduct,
+      migrated: true,
+    })
   } catch (err) {
     console.error("❌ Migration error:", err)
     res.status(500).json({ message: "Migration failed", error: err.message })
+  }
+})
+
+// BULK MIGRATION ROUTE - Fix all products at once
+router.post("/bulk-migrate-images", adminAuth, async (req, res) => {
+  try {
+    console.log("🔄 STARTING BULK MIGRATION...")
+
+    const products = await Product.find({})
+    let migratedCount = 0
+    let errorCount = 0
+    const results = []
+
+    for (const product of products) {
+      try {
+        console.log(`🔄 Processing product: ${product.title}`)
+
+        // Always ensure variants have images field
+        let needsUpdate = false
+        const updatedVariants = product.variants.map((variant, index) => {
+          const variantObj = variant.toObject ? variant.toObject() : { ...variant }
+
+          // Check if images field is missing
+          if (!variantObj.images) {
+            variantObj.images = []
+            needsUpdate = true
+          }
+
+          // If first variant and common images exist, migrate them
+          if (index === 0 && product.images?.others?.length > 0) {
+            variantObj.images = [...(product.images.others || [])]
+            needsUpdate = true
+          }
+
+          return variantObj
+        })
+
+        if (needsUpdate) {
+          // Update each variant individually
+          for (let i = 0; i < updatedVariants.length; i++) {
+            await Product.updateOne({ _id: product._id }, { $set: { [`variants.${i}`]: updatedVariants[i] } })
+          }
+
+          // Clear common images if they were migrated
+          if (product.images?.others?.length > 0) {
+            await Product.updateOne({ _id: product._id }, { $set: { "images.others": [] } })
+          }
+
+          migratedCount++
+          results.push({
+            id: product._id,
+            title: product.title,
+            status: "migrated",
+            commonImages: product.images?.others?.length || 0,
+            variants: updatedVariants.length,
+          })
+          console.log(`✅ Migrated: ${product.title}`)
+        } else {
+          results.push({
+            id: product._id,
+            title: product.title,
+            status: "no_changes_needed",
+          })
+        }
+      } catch (error) {
+        errorCount++
+        results.push({
+          id: product._id,
+          title: product.title,
+          status: "error",
+          error: error.message,
+        })
+        console.error(`❌ Error migrating ${product.title}:`, error)
+      }
+    }
+
+    console.log(`✅ BULK MIGRATION COMPLETED: ${migratedCount} migrated, ${errorCount} errors`)
+
+    res.json({
+      message: "Bulk migration completed",
+      totalProducts: products.length,
+      migratedCount,
+      errorCount,
+      results,
+    })
+  } catch (err) {
+    console.error("❌ Bulk migration error:", err)
+    res.status(500).json({ message: "Bulk migration failed", error: err.message })
   }
 })
 
@@ -489,39 +575,34 @@ router.put("/update/:id", adminAuth, uploadProduct.any(), async (req, res) => {
       console.log("🔄 FORCE AUTO-MIGRATING during update...")
       console.log("🔄 Common images to migrate:", product.images.others)
 
-      const updatedVariants = product.variants.map((variant, index) => {
-        const variantObj = variant.toObject ? variant.toObject() : variant
+      // Force update each variant individually
+      for (let i = 0; i < product.variants.length; i++) {
+        const variantObj = product.variants[i].toObject ? product.variants[i].toObject() : { ...product.variants[i] }
 
-        if (index === 0) {
-          console.log("🔄 FORCE moving images to first variant:", product.images.others)
-          return {
-            ...variantObj,
-            images: [...(product.images.others || [])], // Force assign
-          }
-        } else {
-          return {
-            ...variantObj,
-            images: variantObj.images || [], // Keep existing or empty
-          }
+        // Ensure images field exists
+        if (!variantObj.images) {
+          variantObj.images = []
         }
-      })
 
-      migratedProduct = await Product.findByIdAndUpdate(
-        req.params.id,
-        {
-          $set: {
-            variants: updatedVariants,
-            "images.others": [],
-          },
-        },
-        { new: true, runValidators: false },
-      )
+        if (i === 0) {
+          console.log("🔄 FORCE moving images to first variant:", product.images.others)
+          variantObj.images = [...(product.images.others || [])]
+        }
+
+        await Product.updateOne({ _id: req.params.id }, { $set: { [`variants.${i}`]: variantObj } })
+      }
+
+      // Clear common images
+      await Product.updateOne({ _id: req.params.id }, { $set: { "images.others": [] } })
+
+      migratedProduct = await Product.findById(req.params.id)
       console.log("✅ FORCE Auto-migration completed")
       console.log(
         "🔍 Migrated variants:",
         migratedProduct.variants.map((v) => ({
           size: v.size,
           imageCount: v.images?.length || 0,
+          hasImagesField: "images" in v,
         })),
       )
     }
