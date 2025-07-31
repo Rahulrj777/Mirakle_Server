@@ -198,37 +198,22 @@ router.delete("/:id/review/:reviewId", userAuth, async (req, res) => {
     const { id: productId, reviewId } = req.params;
     const userId = req.user.id;
 
-    const product = await Product.findById(productId);
-    if (!product) return res.status(404).json({ message: "Product not found" });
-
-    const reviewIndex = product.reviews.findIndex(
-      (r) => r._id.toString() === reviewId && r.user.toString() === userId
+    // Remove the review directly
+    const result = await Product.updateOne(
+      { _id: productId },
+      { $pull: { reviews: { _id: reviewId, user: userId } } }
     );
-    if (reviewIndex === -1)
-      return res.status(404).json({ message: "Review not found or unauthorized" });
 
-    // Delete review images from local storage if any (optional, your code deletes Cloudinary images too)
-    const reviewToDelete = product.reviews[reviewIndex];
-    if (reviewToDelete.images && reviewToDelete.images.length > 0) {
-      reviewToDelete.images.forEach((imgPath) => {
-        const fullPath = path.join(reviewUploadDir, path.basename(imgPath));
-        if (fs.existsSync(fullPath)) {
-          fs.unlinkSync(fullPath);
-        }
-      });
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ message: "Review not found or unauthorized" });
     }
 
-    product.reviews.splice(reviewIndex, 1);
-
-    await product.save(); // <-- This triggers validation error if `name` is missing
-
-    res.json({ message: "Review deleted successfully" });
+    return res.json({ message: "Review deleted successfully" });
   } catch (err) {
     console.error("Delete review error:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 });
-
 
 router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req, res) => {
   try {
