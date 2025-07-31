@@ -507,8 +507,6 @@ router.delete("/delete/:id", adminAuth, async (req, res) => {
   }
 })
 
-// ... existing routes ...
-
 router.put("/toggle-stock/:id", adminAuth, async (req, res) => {
   try {
     const { isOutOfStock } = req.body
@@ -537,7 +535,7 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
       return res.status(400).json({ message: "isOutOfStock must be boolean" })
     }
 
-    // Find product by id
+    // First check if product exists and variant index is valid
     const product = await Product.findById(productId)
     if (!product) return res.status(404).json({ message: "Product not found" })
 
@@ -545,22 +543,29 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
       return res.status(400).json({ message: "Variant index out of range" })
     }
 
-    // Update variant stock status
-    product.variants[index].isOutOfStock = isOutOfStock
-    product.markModified("variants")
-    await product.save()
+    // Use direct MongoDB update to avoid validation issues
+    const updateResult = await Product.updateOne(
+      { _id: productId },
+      { $set: { [`variants.${index}.isOutOfStock`]: isOutOfStock } }
+    )
 
+    if (updateResult.modifiedCount === 0) {
+      return res.status(400).json({ message: "Failed to update variant stock" })
+    }
+
+    // Get the updated product to return
+    const updatedProduct = await Product.findById(productId)
+    
     console.log("✅ Variant stock updated successfully")
 
     res.json({
       message: "Variant stock updated successfully",
-      product,
-      updatedVariant: product.variants[index],
+      product: updatedProduct,
+      updatedVariant: updatedProduct.variants[index],
     })
   } catch (error) {
     console.error("❌ Variant stock update error:", error)
     res.status(500).json({ message: "Server error", error: error.message })
   }
 })
-
 export default router
