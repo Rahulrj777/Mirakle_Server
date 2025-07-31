@@ -573,8 +573,4 @@ router.put("/toggle-variant-stock/:id", adminAuth, async (req, res) => {
   }
 })
 
-router.delete("/delete/:id", adminAuth, async (req, res) => {
-  // ... existing delete route ...
-})
-
 export default router
