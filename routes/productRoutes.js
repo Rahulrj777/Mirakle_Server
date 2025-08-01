@@ -264,7 +264,7 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
       product.reviews.push(newReview)
     }
 
-    await product.save()
+    await product.save({ validateBeforeSave: false })
     const updatedProduct = await Product.findById(req.params.id)
 
     res.status(201).json({
