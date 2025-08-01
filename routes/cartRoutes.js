@@ -30,108 +30,68 @@ router.post("/migrate-clean", userAuth, async (req, res) => {
 // Add to cart
 router.post("/add", userAuth, async (req, res) => {
   try {
-    const { productId, variantIndex, variantId, quantity = 1 } = req.body
+    const { productId, variantIndex, variantId, quantity = 1, image } = req.body
     const userId = req.user.id
 
-    console.log("🛒 AddToCart Request:", { userId, productId, variantIndex, variantId, quantity })
+    console.log("🛒 AddToCart Request:", { userId, productId, variantIndex, variantId, quantity, image })
 
-    // Validate required fields
-    if (!productId || (variantIndex === undefined && !variantId) || !userId) {
-      console.error("❌ Missing required fields:", { productId, variantIndex, variantId, userId })
-      return res.status(400).json({
-        message: "Invalid item data - missing productId, variantIndex/variantId, or userId",
-      })
+    if (!productId || (variantIndex === undefined && !variantId)) {
+      return res.status(400).json({ message: "Missing productId or variant" })
     }
 
-    // Verify product exists
     const product = await Product.findById(productId)
-    if (!product) {
-      console.error("❌ Product not found:", productId)
-      return res.status(404).json({ message: "Product not found" })
-    }
+    if (!product) return res.status(404).json({ message: "Product not found" })
 
-    // Get variant by index if provided, otherwise try to find by _id
-    let variant
-    if (variantIndex !== undefined) {
-      variant = product.variants[variantIndex]
-      if (!variant) {
-        console.error("❌ Variant not found at index:", variantIndex)
-        return res.status(404).json({ message: "Variant not found at specified index" })
-      }
-    } else {
-      variant = product.variants.find((v) => v._id?.toString() === variantId)
-      if (!variant) {
-        console.error("❌ Variant not found with ID:", variantId)
-        return res.status(404).json({ message: "Variant not found" })
-      }
-    }
+    const variant =
+      variantIndex !== undefined
+        ? product.variants[variantIndex]
+        : product.variants.find((v) => v._id?.toString() === variantId)
+    if (!variant) return res.status(404).json({ message: "Variant not found" })
 
-    // Find or create cart for this specific user
     let userCart = await Cart.findOne({ userId })
-    if (!userCart) {
-      userCart = new Cart({ userId, items: [] })
-    }
+    if (!userCart) userCart = new Cart({ userId, items: [] })
 
-    // Ensure items is an array
-    if (!Array.isArray(userCart.items)) {
-      userCart.items = []
-    }
+    const finalVariantId = variantId || `${productId}_${variant.size || variantIndex}`
 
-    // Generate consistent variantId
-    const finalVariantId = variantId || `${productId}_variant_${variantIndex}_${variant.size || "unknown"}`
+    // Prepare image array
+    const imagesArray = [
+      { url: image || product.images?.others?.[0]?.url || "/placeholder.svg" },
+    ]
 
-    // Check if item already exists in cart
+    // Check if this item already exists
     const existingItemIndex = userCart.items.findIndex(
-      (item) => item._id.toString() === productId && item.variantId === finalVariantId,
+      (item) => item._id.toString() === productId && item.variantId === finalVariantId
     )
 
-    // Construct the new item
-    const newItem = {
-      _id: new mongoose.Types.ObjectId(productId),
-      variantId: finalVariantId,
-      title: product.title || "Unknown Product",
-      images: {
-        others: Array.isArray(product.images?.others)
-          ? product.images.others.map((img) => ({
-              url: typeof img === "string" ? img : img?.url || "/placeholder.svg",
-            }))
-          : [{ url: "/placeholder.svg" }],
-      },
-      size: variant.size || `${variant.weight?.value || "N/A"} ${variant.weight?.unit || ""}`,
-      weight: {
-        value: variant.weight?.value || variant.size || "N/A",
-        unit: variant.weight?.unit || (variant.size ? "size" : "unit"),
-      },
-      originalPrice: Number(variant.price) || 0,
-      discountPercent: Number(variant.discountPercent) || 0,
-      currentPrice: Number(variant.price - (variant.price * (variant.discountPercent || 0)) / 100) || 0,
-      quantity: Number(quantity) || 1,
-    }
-
     if (existingItemIndex !== -1) {
-      // Update quantity of existing item
       userCart.items[existingItemIndex].quantity += quantity
-      console.log("✅ Updated existing item quantity:", userCart.items[existingItemIndex].quantity)
     } else {
-      // Add new item to cart
+      const newItem = {
+        _id: new mongoose.Types.ObjectId(productId),
+        variantId: finalVariantId,
+        title: product.title || "Unknown Product",
+        images: { others: imagesArray },
+        size: variant.size || `${variant.weight?.value || "N/A"} ${variant.weight?.unit || ""}`,
+        weight: {
+          value: variant.weight?.value || variant.size || "N/A",
+          unit: variant.weight?.unit || (variant.size ? "size" : "unit"),
+        },
+        originalPrice: Number(variant.price) || 0,
+        discountPercent: Number(variant.discountPercent) || 0,
+        currentPrice: Number(variant.price - (variant.price * (variant.discountPercent || 0)) / 100) || 0,
+        quantity: Number(quantity) || 1,
+      }
       userCart.items.push(newItem)
-      console.log("✅ Added new item to cart:", newItem)
     }
 
-    // Save cart
     await userCart.save()
-    console.log("✅ Cart saved successfully")
-
-    res.status(200).json({
-      message: "Added to cart successfully",
-      cart: userCart,
-      itemsCount: userCart.items.length,
-    })
+    res.status(200).json({ message: "Added to cart successfully", cart: userCart })
   } catch (error) {
     console.error("❌ AddToCart Error:", error)
     res.status(500).json({ message: "Server error", error: error.message })
   }
 })
+
 
 // Get cart items
 router.get("/", userAuth, async (req, res) => {

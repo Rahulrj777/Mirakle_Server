@@ -240,8 +240,6 @@ router.post("/:id/review", userAuth, uploadReview.array("images", 5), async (req
     }
 
     const product = await Product.findById(req.params.id)
-    console.log("Product fetched:", product);
-    console.log("Product name field:", product?.name);
     if (!product) {
       return res.status(404).json({ message: "Product not found" })
     }
