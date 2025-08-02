@@ -17,7 +17,7 @@ import cartRoutes from "./routes/cartRoutes.js"
 import offerBannerRoutes from "./routes/offerBannerRoutes.js"
 import adminRoutes from "./routes/adminRoutes.js";
 import locationRoutes from './routes/locationRoutes.js';
-import contactRoutes from "./routes/contact.js";
+import contactRoutes from "./routes/contactRoutes.js";
 
 const app = express()
 
