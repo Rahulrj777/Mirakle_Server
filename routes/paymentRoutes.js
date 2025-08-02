@@ -4,8 +4,8 @@ import Razorpay from "razorpay";
 const router = express.Router();
 
 const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY,
-  key_secret: process.env.RAZORPAY_SECRET,
+  key_id: process.env.CONTACT_EMAIL,
+  key_secret: process.env.CONTACT_PASSWORD,
 });
 
 // Create order
