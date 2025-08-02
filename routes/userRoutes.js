@@ -40,29 +40,18 @@ router.post("/send-otp", async (req, res) => {
 });
 
 router.post("/verify-otp", async (req, res) => {
+  console.log("📩 Verify OTP request body:", req.body);
+
   const { email, otp } = req.body;
   const record = otpStore[email];
 
   if (!record || record.otp !== otp || record.expires < Date.now()) {
+    console.log("❌ OTP check failed:", record, otp);
     return res.status(400).json({ message: "Invalid or expired OTP" });
   }
 
-  // OTP is valid → remove it
   delete otpStore[email];
-
-  // Find or create user
-  let user = await User.findOne({ email });
-  if (!user) {
-    return res.status(404).json({ message: "User not found" });
-  }
-
-  // Issue JWT
-  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
-
-  res.json({
-    token,
-    user: { _id: user._id, name: user.name, email: user.email },
-  });
+  res.json({ message: "OTP verified" });
 });
 
 // Register
