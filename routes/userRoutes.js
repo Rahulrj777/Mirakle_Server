@@ -13,52 +13,48 @@ router.post("/send-otp", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ message: "Email required" });
 
-  // Check if user exists
-  let user = await User.findOne({ email });
-  if (!user) {
-    // Create a temporary user record
-    user = new User({ name: "Pending User", email, password: await bcrypt.hash("temp123", 10) });
-  }
-
-  // Generate OTP
+  // ✅ Generate 6-digit OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  user.otp = otp;
-  user.otpExpires = Date.now() + 5 * 60 * 1000;
-  await user.save();
 
-  // Send email
+  // ✅ Store OTP with expiry (5 min)
+  otpStore[email] = { otp, expires: Date.now() + 5 * 60 * 1000 };
+
+  console.log("OTP generated for:", email, "OTP:", otp); // debug
+
+  // ✅ Send Email
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: { user: process.env.CONTACT_EMAIL, pass: process.env.CONTACT_PASSWORD },
   });
 
-  await transporter.sendMail({
-    from: `"Mirakle" <${process.env.CONTACT_EMAIL}>`,
-    to: email,
-    subject: "Your Mirakle OTP Code",
-    text: `Your OTP is ${otp}. It will expire in 5 minutes.`,
-  });
+  try {
+    await transporter.sendMail({
+      from: `"Mirakle" <${process.env.CONTACT_EMAIL}>`,
+      to: email,
+      subject: "Your Mirakle OTP Code",
+      text: `Your OTP is ${otp}. It will expire in 5 minutes.`,
+    });
 
-  res.json({ message: "OTP sent successfully" });
+    res.json({ message: "OTP sent successfully" });
+  } catch (err) {
+    console.error("Email sending error:", err);
+    res.status(500).json({ message: "Failed to send OTP" });
+  }
 });
 
 router.post("/verify-otp", async (req, res) => {
   const { email, otp } = req.body;
-  const user = await User.findOne({ email });
+  const record = otpStore[email];
 
-  if (!user || user.otp !== otp || user.otpExpires < Date.now()) {
+  // ✅ Check OTP validity
+  if (!record || record.otp !== otp || record.expires < Date.now()) {
     return res.status(400).json({ message: "Invalid or expired OTP" });
   }
 
-  // Mark as verified
-  user.isVerified = true;
-  user.otp = undefined;
-  user.otpExpires = undefined;
-  await user.save();
+  // ✅ Delete OTP after successful verification
+  delete otpStore[email];
 
-  // Issue JWT
-  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
-  res.json({ token, user: { _id: user._id, name: user.name, email: user.email } });
+  // Your user creation / JWT logic here...
 });
 
 // Register
