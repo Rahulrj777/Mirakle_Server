@@ -98,6 +98,34 @@ router.post("/address", userAuth, async (req, res) => {
   }
 });
 
+// Update (Edit) address
+router.put("/address/:id", userAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+
+    // Find the address by _id
+    const addressIndex = user.addresses.findIndex(
+      (a) => a._id.toString() === req.params.id
+    );
+
+    if (addressIndex === -1) {
+      return res.status(404).json({ message: "Address not found" });
+    }
+
+    // Update only the fields provided
+    user.addresses[addressIndex] = {
+      ...user.addresses[addressIndex]._doc,
+      ...req.body,
+    };
+
+    await user.save();
+    res.json({ message: "Address updated", addresses: user.addresses });
+  } catch (err) {
+    console.error("Edit error:", err);
+    res.status(500).json({ message: "Failed to edit address" });
+  }
+});
+
 // Delete address
 router.delete("/address/:id", userAuth, async (req, res) => {
   try {

@@ -9,7 +9,7 @@ const addressSchema = new mongoose.Schema({
   pincode: String,
   landmark: String,
   type: { type: String, default: "HOME" },
-}, { _id: true }); // _id is used for delete/edit
+}, { _id: true });
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
