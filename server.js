@@ -22,11 +22,6 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 
 const app = express()
 
-const allowedOrigins = [
-  "https://mirakle-client.vercel.app",
-  "https://mirakle-admin.vercel.app",
-]
-
 const corsOptions = {
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -38,11 +33,16 @@ const corsOptions = {
   credentials: true,
 }
 
-app.use(cors({
-  origin: "https://mirakle-client.vercel.app",
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: [
+      "https://mirakle-client.vercel.app",
+      "https://mirakle-admin.vercel.app",
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true,
+  })
+);
 // app.use(cors(corsOptions))
 app.use(express.json({ limit: "10mb" }))
 app.use(express.urlencoded({ extended: true, limit: "10mb" }))
