@@ -4,8 +4,55 @@ import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
 import User from "../models/User.js"
 import userAuth from "../middleware/userAuth.js"
+import nodemailer from "nodemailer";
 
 const router = express.Router()
+const otpStore = {};
+
+router.post("/send-otp", async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ message: "Email required" });
+
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  otpStore[email] = { otp, expires: Date.now() + 5 * 60 * 1000 };
+
+  // Send email
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: { user: process.env.CONTACT_EMAIL, pass: process.env.CONTACT_PASSWORD },
+  });
+
+  await transporter.sendMail({
+    from: `"Mirakle" <${process.env.CONTACT_EMAIL}>`,
+    to: email,
+    subject: "Your Mirakle OTP Code",
+    text: `Your OTP is ${otp}. It will expire in 5 minutes.`,
+  });
+
+  res.json({ message: "OTP sent successfully" });
+});
+
+router.post("/verify-otp", async (req, res) => {
+  const { email, otp } = req.body;
+  const record = otpStore[email];
+  if (!record || record.otp !== otp || record.expires < Date.now()) {
+    return res.status(400).json({ message: "Invalid or expired OTP" });
+  }
+
+  // Delete OTP after verification
+  delete otpStore[email];
+
+  // Check if user exists or create a new one
+  let user = await User.findOne({ email });
+  if (!user) {
+    user = await User.create({ name: "User", email, password: await bcrypt.hash("tempPass", 10) });
+  }
+
+  // Issue JWT
+  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+  res.json({ token, user: { _id: user._id, name: user.name, email: user.email } });
+});
 
 // Register
 router.post("/signup", async (req, res) => {
