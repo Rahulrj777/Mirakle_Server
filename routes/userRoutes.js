@@ -76,7 +76,7 @@ router.post("/login", async (req, res) => {
   }
 })
 
-// Get saved addresses
+// ✅ Get all addresses
 router.get("/address", userAuth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -86,7 +86,7 @@ router.get("/address", userAuth, async (req, res) => {
   }
 });
 
-// Add new address
+// ✅ Add address
 router.post("/address", userAuth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -98,25 +98,18 @@ router.post("/address", userAuth, async (req, res) => {
   }
 });
 
-// Update (Edit) address
+// ✅ Update address
 router.put("/address/:id", userAuth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
+    const address = user.addresses.id(req.params.id);
 
-    // Find the address by _id
-    const addressIndex = user.addresses.findIndex(
-      (a) => a._id.toString() === req.params.id
-    );
-
-    if (addressIndex === -1) {
+    if (!address) {
       return res.status(404).json({ message: "Address not found" });
     }
 
-    // Update only the fields provided
-    user.addresses[addressIndex] = {
-      ...user.addresses[addressIndex]._doc,
-      ...req.body,
-    };
+    // Update only provided fields
+    Object.assign(address, req.body);
 
     await user.save();
     res.json({ message: "Address updated", addresses: user.addresses });
@@ -126,17 +119,11 @@ router.put("/address/:id", userAuth, async (req, res) => {
   }
 });
 
-// Delete address
+// ✅ Delete address
 router.delete("/address/:id", userAuth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    
-    // Correct filtering
-    const updatedAddresses = user.addresses.filter(
-      a => a._id.toString() !== req.params.id.toString()
-    );
-
-    user.addresses = updatedAddresses;
+    user.addresses = user.addresses.filter((a) => a._id.toString() !== req.params.id);
     await user.save();
 
     res.json({ message: "Address deleted", addresses: user.addresses });
