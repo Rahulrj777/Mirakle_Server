@@ -31,12 +31,12 @@ router.post("/send-otp", async (req, res) => {
       subject: "Your Mirakle OTP Code",
       text: `Your OTP is ${otp}. It will expire in 5 minutes.`,
     });
-
     res.json({ message: "OTP sent successfully" });
   } catch (err) {
-    console.error("Email sending error:", err);
-    res.status(500).json({ message: "Failed to send OTP" });
+    console.error("Email send error:", err);
+    res.status(500).json({ message: "Failed to send OTP", error: err.message });
   }
+
 });
 
 router.post("/verify-otp", async (req, res) => {
