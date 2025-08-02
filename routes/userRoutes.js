@@ -13,15 +13,12 @@ router.post("/send-otp", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ message: "Email required" });
 
-  // ✅ Generate 6-digit OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-  // ✅ Store OTP with expiry (5 min)
   otpStore[email] = { otp, expires: Date.now() + 5 * 60 * 1000 };
 
   console.log("OTP generated for:", email, "OTP:", otp); // debug
 
-  // ✅ Send Email
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: { user: process.env.CONTACT_EMAIL, pass: process.env.CONTACT_PASSWORD },
@@ -46,15 +43,12 @@ router.post("/verify-otp", async (req, res) => {
   const { email, otp } = req.body;
   const record = otpStore[email];
 
-  // ✅ Check OTP validity
   if (!record || record.otp !== otp || record.expires < Date.now()) {
     return res.status(400).json({ message: "Invalid or expired OTP" });
   }
 
-  // ✅ Delete OTP after successful verification
   delete otpStore[email];
 
-  // Your user creation / JWT logic here...
 });
 
 // Register
