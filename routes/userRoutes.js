@@ -13,9 +13,18 @@ router.post("/send-otp", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ message: "Email required" });
 
-  // Generate 6-digit OTP
+  // Check if user exists
+  let user = await User.findOne({ email });
+  if (!user) {
+    // Create a temporary user record
+    user = new User({ name: "Pending User", email, password: await bcrypt.hash("temp123", 10) });
+  }
+
+  // Generate OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  otpStore[email] = { otp, expires: Date.now() + 5 * 60 * 1000 };
+  user.otp = otp;
+  user.otpExpires = Date.now() + 5 * 60 * 1000;
+  await user.save();
 
   // Send email
   const transporter = nodemailer.createTransport({
@@ -35,19 +44,17 @@ router.post("/send-otp", async (req, res) => {
 
 router.post("/verify-otp", async (req, res) => {
   const { email, otp } = req.body;
-  const record = otpStore[email];
-  if (!record || record.otp !== otp || record.expires < Date.now()) {
+  const user = await User.findOne({ email });
+
+  if (!user || user.otp !== otp || user.otpExpires < Date.now()) {
     return res.status(400).json({ message: "Invalid or expired OTP" });
   }
 
-  // Delete OTP after verification
-  delete otpStore[email];
-
-  // Check if user exists or create a new one
-  let user = await User.findOne({ email });
-  if (!user) {
-    user = await User.create({ name: "User", email, password: await bcrypt.hash("tempPass", 10) });
-  }
+  // Mark as verified
+  user.isVerified = true;
+  user.otp = undefined;
+  user.otpExpires = undefined;
+  await user.save();
 
   // Issue JWT
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
