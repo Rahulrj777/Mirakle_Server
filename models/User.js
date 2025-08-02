@@ -3,7 +3,7 @@ import mongoose from "mongoose"
 
 const addressSchema = new mongoose.Schema({
   name: String,
-  phone: String,
+  phone:{ type: String, required: true },
   line1: String,
   city: String,
   pincode: String,
