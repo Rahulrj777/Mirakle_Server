@@ -18,6 +18,7 @@ import offerBannerRoutes from "./routes/offerBannerRoutes.js"
 import adminRoutes from "./routes/adminRoutes.js";
 import locationRoutes from './routes/locationRoutes.js';
 import contactRoutes from "./routes/contactRoutes.js";
+import paymentRoutes from "./routes/paymentRoutes.js";
 
 const app = express()
 
@@ -56,6 +57,7 @@ app.use("/api/offer-banners", offerBannerRoutes)
 app.use("/api/admin", adminRoutes);
 app.use('/api/location', locationRoutes);
 app.use("/api/contact", contactRoutes);
+app.use("/api/payment", paymentRoutes);
 
 app.get("/", (req, res) => {
   res.send("Mirakle Server is Running")
