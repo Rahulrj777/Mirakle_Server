@@ -1,49 +1,54 @@
 import express from "express";
 import ContactMessage from "../models/Contact.js";
 import nodemailer from "nodemailer";
+import userAuth from "../middleware/userAuth.js"; // your auth middleware
 
 const router = express.Router();
 
-// Create reusable transporter once (outside request handlers)
+// Create reusable transporter once
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || "smtp.gmail.com",
   port: Number(process.env.SMTP_PORT) || 587,
   secure: process.env.SMTP_PORT === "465",
   auth: {
-    user: process.env.CONTACT_EMAIL,    
-    pass: process.env.CONTACT_PASSWORD,  
+    user: process.env.CONTACT_EMAIL,
+    pass: process.env.CONTACT_PASSWORD,
   },
 });
 
-// POST /api/contact - save message and send notification email
-router.post("/", async (req, res) => {
-  const { name, email, message } = req.body;
+// POST /api/contact protected route to save msg & send email
+router.post("/", userAuth, async (req, res) => {
+  const { name, message } = req.body;
+  const email = req.user.email;
 
-  if (!name || !email || !message) {
-    return res.status(400).json({ success: false, error: "Name, email and message are required" });
+  if (!name || !message) {
+    return res.status(400).json({ success: false, error: "Name and message are required" });
   }
 
   try {
-    // Save message to database
-    const newMessage = new ContactMessage({ name, email, message });
+    const newMessage = new ContactMessage({
+      name,
+      email,
+      message,
+      status: "unread",
+    });
     await newMessage.save();
 
-    // Send notification email to admin/support
     await transporter.sendMail({
       from: `"Mirakle Contact" <${process.env.CONTACT_EMAIL}>`,
-      to: process.env.ADMIN_EMAIL || "rahulsrinivasannkl@gmail.com",
+      to: process.env.ADMIN_EMAIL,
       subject: `New Contact Message from ${name}`,
       text: `You have received a new message from ${name} (${email}):\n\n${message}`,
     });
 
     res.status(200).json({ success: true, message: "Message saved and emailed successfully" });
   } catch (error) {
-    console.error("❌ Save error:", error);
+    console.error("Save error:", error);
     res.status(500).json({ success: false, error: "Failed to save message or send email" });
   }
 });
 
-// PUT /api/contact/respond/:id - mark message as responded/read
+// PUT /api/contact/respond/:id
 router.put("/respond/:id", async (req, res) => {
   try {
     const message = await ContactMessage.findById(req.params.id);
@@ -58,13 +63,13 @@ router.put("/respond/:id", async (req, res) => {
   }
 });
 
-// GET /api/contact - fetch all contact messages for admin panel
+// GET /api/contact
 router.get("/", async (req, res) => {
   try {
     const messages = await ContactMessage.find().sort({ createdAt: -1 });
     res.status(200).json({ success: true, messages });
   } catch (error) {
-    console.error("❌ Fetch error:", error);
+    console.error("Fetch error:", error);
     res.status(500).json({ success: false, error: "Failed to fetch messages" });
   }
 });
