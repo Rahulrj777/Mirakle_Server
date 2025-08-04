@@ -112,7 +112,7 @@ router.post("/login", async (req, res) => {
       token,
       user: {
         _id: user._id,
-        userId: user._id, // Add this for compatibility
+        userId: user._id,
         name: user.name,
         email: user.email,
       },
