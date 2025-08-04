@@ -31,7 +31,7 @@ router.post("/", async (req, res) => {
     // Send notification email to admin/support
     await transporter.sendMail({
       from: `"Mirakle Contact" <${process.env.CONTACT_EMAIL}>`,
-      to: process.env.ADMIN_EMAIL || "admin@example.com", // Change to your actual admin email or multiple
+      to: process.env.ADMIN_EMAIL || "rahulsrinivasannkl@gmail.com",
       subject: `New Contact Message from ${name}`,
       text: `You have received a new message from ${name} (${email}):\n\n${message}`,
     });
