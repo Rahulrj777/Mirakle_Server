@@ -39,7 +39,7 @@ app.use(
       "https://mirakle-client.vercel.app",
       "https://mirakle-admin.vercel.app",
     ],
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     credentials: true,
   })
 );
